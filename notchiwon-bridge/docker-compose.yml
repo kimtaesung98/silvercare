@@ -1,0 +1,63 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: notchiwon-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: notchiwon
+      POSTGRES_PASSWORD: notchiwon_dev_pw
+      POSTGRES_DB: notchiwon_bridge
+    ports:
+      - "5432:5432"
+    volumes:
+      - notchiwon_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U notchiwon -d notchiwon_bridge"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: notchiwon-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: notchiwon-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: "postgresql://notchiwon:notchiwon_dev_pw@postgres:5432/notchiwon_bridge?schema=public"
+      REDIS_URL: "redis://redis:6379"
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  adminer:
+    image: adminer
+    container_name: notchiwon-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+
+volumes:
+  notchiwon_pg_data:
