@@ -15,7 +15,7 @@ export class EscalationService {
 
   private readonly ruleMap: { pattern: RegExp; type: EscalationTriggerType }[] = [
     { pattern: /(넘어졌|쓰러졌|낙상)/, type: EscalationTriggerType.FALL_MENTION },
-    { pattern: /(아파|아프|통증|숨이\s*차)/, type: EscalationTriggerType.PAIN_COMPLAINT },
+    { pattern: /(아파(?!트)|아프|통증|숨이\s*차)/, type: EscalationTriggerType.PAIN_COMPLAINT },
     { pattern: /(죽고\s*싶|자해|때리)/, type: EscalationTriggerType.SELF_OR_OTHER_HARM },
   ];
 

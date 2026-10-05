@@ -1,7 +1,26 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { PrismaService } from '../../prisma/prisma.service';
-import { Speaker } from '@prisma/client';
+import { EscalationService } from '../escalation/escalation.service';
+import { EscalationTriggerType, Speaker } from '@prisma/client';
+
+type ChatMessage = { role: 'user' | 'assistant'; content: string };
+
+const SESSION_KICKOFF_PROMPT = '대화를 시작해줘. 노인에게 먼저 친근하게 인사하고 관심사 화제를 자연스럽게 꺼내줘.';
+
+// 위급 발화 감지 시 LLM을 거치지 않고 즉시 내보내는 고정 안심 응답
+const ESCALATION_REPLY = '지금 많이 힘드시죠. 선생님께 바로 알려드렸어요. 조금만 기다려주세요.';
+
+// LLM 호출 실패·빈 응답 시 대화가 끊기지 않도록 쓰는 폴백 응답
+const FALLBACK_REPLY = '네, 말씀 잘 들었어요. 선생님이 곧 오실 거예요. 조금만 더 저랑 이야기 나눠요.';
+
+export interface ElderUtteranceResult {
+  elderUtteranceId: string;
+  aiUtteranceId: string;
+  reply: string;
+  escalated: boolean;
+  triggerType: EscalationTriggerType | null;
+}
 
 /**
  * 대화 오케스트레이터.
@@ -17,7 +36,10 @@ export class SessionService {
   private readonly logger = new Logger(SessionService.name);
   private readonly anthropic: Anthropic;
 
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly escalationService: EscalationService,
+  ) {
     this.anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
 
@@ -44,7 +66,7 @@ export class SessionService {
     const systemPrompt = this.buildSystemPrompt(visit.elder.name, topKeywords.map((k) => k.keyword));
 
     const openingMessage = await this.generateAiUtterance(systemPrompt, [
-      { role: 'user', content: '대화를 시작해줘. 노인에게 먼저 친근하게 인사하고 관심사 화제를 자연스럽게 꺼내줘.' },
+      { role: 'user', content: SESSION_KICKOFF_PROMPT },
     ]);
 
     await this.prisma.utterance.create({
@@ -70,6 +92,106 @@ export class SessionService {
     // TODO: briefing 모듈에 세션 종료 이벤트 발행 → 브리핑 리포트 생성
   }
 
+  /**
+   * 노인 발화(STT 결과) 1건을 처리한다.
+   * 1. 발화를 저장하기 전에 규칙 기반 필터를 먼저 돌린다 (LLM 결과와 무관하게 항상 실행).
+   * 2. 위급 신호가 감지되면 에스컬레이션 이벤트를 남기고, LLM 호출 없이 고정 안심 응답을 돌려준다.
+   * 3. 그 외에는 지금까지의 대화 기록으로 Claude 응답을 생성한다. 실패 시 폴백 응답을 쓴다.
+   */
+  async handleElderUtterance(sessionId: string, text: string, audioRef?: string): Promise<ElderUtteranceResult> {
+    const trimmed = text?.trim();
+    if (!trimmed) {
+      throw new BadRequestException('text is required');
+    }
+
+    const session = await this.prisma.conversationSession.findUnique({
+      where: { id: sessionId },
+      include: { elder: true },
+    });
+    if (!session) {
+      throw new NotFoundException(`session ${sessionId} not found`);
+    }
+    if (session.endedAt) {
+      throw new BadRequestException(`session ${sessionId} already ended`);
+    }
+
+    const triggerType = this.escalationService.detect(trimmed);
+
+    const elderUtterance = await this.prisma.utterance.create({
+      data: {
+        sessionId,
+        speaker: Speaker.ELDER,
+        text: trimmed,
+        audioRef,
+        flaggedRisk: triggerType !== null,
+      },
+    });
+
+    let reply: string;
+    if (triggerType) {
+      await this.escalationService.raiseEscalation(sessionId, elderUtterance.id, triggerType);
+      reply = ESCALATION_REPLY;
+    } else {
+      reply = await this.generateReply(session.elderId, session.elder.name, sessionId);
+    }
+
+    const aiUtterance = await this.prisma.utterance.create({
+      data: { sessionId, speaker: Speaker.AI, text: reply },
+    });
+
+    return {
+      elderUtteranceId: elderUtterance.id,
+      aiUtteranceId: aiUtterance.id,
+      reply,
+      escalated: triggerType !== null,
+      triggerType,
+    };
+  }
+
+  private async generateReply(elderId: string, elderName: string, sessionId: string): Promise<string> {
+    const [topKeywords, history] = await Promise.all([
+      this.prisma.keywordTag.findMany({
+        where: { elderId },
+        orderBy: { score: 'desc' },
+        take: 5,
+      }),
+      this.prisma.utterance.findMany({
+        where: { sessionId },
+        orderBy: { createdAt: 'asc' },
+      }),
+    ]);
+
+    const systemPrompt = this.buildSystemPrompt(elderName, topKeywords.map((k) => k.keyword));
+    const messages = this.buildMessages(history);
+
+    try {
+      const reply = (await this.generateAiUtterance(systemPrompt, messages)).trim();
+      return reply || FALLBACK_REPLY;
+    } catch (err) {
+      this.logger.error(`Claude 응답 생성 실패: sessionId=${sessionId}`, err instanceof Error ? err.stack : err);
+      return FALLBACK_REPLY;
+    }
+  }
+
+  /**
+   * 저장된 발화 기록을 Messages API 형식으로 변환한다.
+   * 세션 첫 발화는 AI 인사말이므로 시작 지시문을 user 턴으로 앞에 붙이고,
+   * 같은 화자가 연속된 경우(예: 노인이 연달아 말함)는 한 턴으로 합친다.
+   */
+  private buildMessages(history: { speaker: Speaker; text: string }[]): ChatMessage[] {
+    const messages: ChatMessage[] = [{ role: 'user', content: SESSION_KICKOFF_PROMPT }];
+    for (const u of history) {
+      const role = u.speaker === Speaker.ELDER ? 'user' : 'assistant';
+      const last = messages[messages.length - 1];
+      if (last.role === role) {
+        last.content = `${last.content}\n${u.text}`;
+      } else {
+        messages.push({ role, content: u.text });
+      }
+    }
+    return messages;
+  }
+
   private buildSystemPrompt(elderName: string, interestKeywords: string[]): string {
     return [
       `당신은 치매를 겪고 계신 ${elderName}님과 대화하는 다정한 AI 동반자입니다.`,
@@ -85,7 +207,7 @@ export class SessionService {
 
   private async generateAiUtterance(
     systemPrompt: string,
-    messages: { role: 'user' | 'assistant'; content: string }[],
+    messages: ChatMessage[],
   ): Promise<string> {
     const response = await this.anthropic.messages.create({
       model: process.env.CLAUDE_CONVERSATION_MODEL ?? 'claude-sonnet-4-6',
