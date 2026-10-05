@@ -97,6 +97,8 @@ notchiwon-bridge/
 
 ## 5. 다음 진행할 항목 (이전에 논의하던 것)
 
+> 2026-10-05: 기술 스택을 Go 서버 + Flutter 앱으로 바꾸기로 했습니다. 새 구조는 [docs/architecture.md](docs/architecture.md), 진행 순서는 [docs/development-process.md](docs/development-process.md)를 따릅니다. 아래 NestJS 기준 내용은 전환 전 기록입니다.
+
 - [ ] API 명세서 (엔드포인트 설계)
 - [ ] 비기능 요구사항 (동시접속 규모, 응답 지연 허용치, 장애 폴백)
 - [ ] 개발 일정 & 마일스톤
