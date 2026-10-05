@@ -1,0 +1,12 @@
+name: notchiwon_workspace
+publish_to: 'none'
+
+environment:
+  sdk: ^3.13.5
+
+workspace:
+  - apps/elder_tablet
+  - apps/caregiver
+  - packages/api_client
+  - packages/ui
+  - packages/voice

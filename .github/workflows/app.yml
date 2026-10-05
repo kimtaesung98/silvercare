@@ -1,0 +1,27 @@
+name: app
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  flutter:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: notchiwon-bridge/app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: dart format --output=none --set-exit-if-changed .
+      - run: flutter analyze
+      - name: flutter test
+        run: |
+          for pkg in apps/elder_tablet apps/caregiver; do
+            (cd "$pkg" && flutter test)
+          done
