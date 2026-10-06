@@ -220,6 +220,8 @@ class ApiClient {
           return CompanionSchedule.fromJson(value);
         case 'DailyDigest':
           return DailyDigest.fromJson(value);
+        case 'DailyDigestList':
+          return DailyDigestList.fromJson(value);
         case 'ElderSummary':
           return ElderSummary.fromJson(value);
         case 'EmotionTag':
@@ -232,6 +234,12 @@ class ApiClient {
           return EscalationTriggerTypeTypeTransformer().decode(value);
         case 'FcmTokenRegistration':
           return FcmTokenRegistration.fromJson(value);
+        case 'Guardian':
+          return Guardian.fromJson(value);
+        case 'GuardianContext':
+          return GuardianContext.fromJson(value);
+        case 'GuardianLoginResponse':
+          return GuardianLoginResponse.fromJson(value);
         case 'Health':
           return Health.fromJson(value);
         case 'LocationUpdate':

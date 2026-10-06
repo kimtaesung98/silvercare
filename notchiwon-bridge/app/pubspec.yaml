@@ -7,6 +7,7 @@ environment:
 workspace:
   - apps/elder_tablet
   - apps/caregiver
+  - apps/guardian
   - packages/api_client
   - packages/ui
   - packages/voice

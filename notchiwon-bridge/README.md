@@ -19,6 +19,7 @@ notchiwon-bridge/
 ├── app/                      # Flutter (pub workspace)
 │   ├── apps/elder_tablet/    # 어르신 태블릿 앱
 │   ├── apps/caregiver/       # 조무사 앱
+│   ├── apps/guardian/        # 보호자 앱
 │   └── packages/             # api_client, voice, ui 공유 패키지
 ├── docs/                     # 아키텍처, 개발 과정
 ├── docker-compose.yml        # postgres, redis, server
@@ -68,7 +69,7 @@ go run ./cmd/admin seed-demo                 # 데모 센터·어르신·조무�
 ```
 
 조무사 앱은 `POST /auth/caregiver/login`으로 받은 토큰, 태블릿은 기기 토큰을 `Authorization: Bearer`로 보냅니다.
-실제 계정은 `go run ./cmd/admin set-caregiver-login -caregiver <id> -login <아이디>`(비밀번호는 표준 입력), 태블릿은 `go run ./cmd/admin create-tablet -elder <id>`로 발급합니다.
+실제 계정은 `go run ./cmd/admin set-caregiver-login -caregiver <id> -login <아이디>`(비밀번호는 표준 입력), 보호자는 `go run ./cmd/admin set-guardian-login -guardian <id> -login <아이디>`, 태블릿은 `go run ./cmd/admin create-tablet -elder <id>`로 발급합니다.
 ETA는 `KAKAO_MOBILITY_API_KEY`가 있으면 카카오모빌리티 길찾기로, 없으면 방문 예정 시각까지 남은 분으로 셉니다. ETA가 15분(`SESSION_TRIGGER_ETA_MINUTES`) 이내가 되면 픽업 대기 세션이 시작되고, 도착 처리하면 브리핑이 비동기로 만들어집니다.
 
 ### 텍스트로 대화해 보기
@@ -114,9 +115,18 @@ cd apps/caregiver && flutter run \
   --dart-define=FIREBASE_SENDER_ID=... \
   --dart-define=FIREBASE_PROJECT_ID=...
 
+# 보호자 앱: Firebase 값은 Android 앱(kr.notchiwon.guardian)에서. 값이 없으면
+# 푸시 없이 동작하고 위급 알림은 홈 화면 목록으로만 봅니다.
+cd apps/guardian && flutter run \
+  --dart-define=SERVER_URL=http://10.0.2.2:8000 \
+  --dart-define=FIREBASE_API_KEY=... \
+  --dart-define=FIREBASE_APP_ID=... \
+  --dart-define=FIREBASE_SENDER_ID=... \
+  --dart-define=FIREBASE_PROJECT_ID=...
+
 # 검사 (app/ 에서)
 dart format . && flutter analyze
-for pkg in apps/elder_tablet apps/caregiver packages/api_client packages/voice packages/ui; do
+for pkg in apps/elder_tablet apps/caregiver apps/guardian packages/api_client packages/voice packages/ui; do
   (cd "$pkg" && flutter test)
 done
 ```
@@ -137,13 +147,21 @@ cd server && go run ./cmd/admin synth-openers
 4. 조무사 앱에서 로그인 → 방문 → "출발하기". ETA가 15분 이내면 태블릿에서 대화가 시작됩니다(가까이 있으면 `SESSION_TRIGGER_ETA_MINUTES`를 크게).
 5. 태블릿에 "다리가 너무 아파"라고 말하면 휴대폰에 위급 알림이 옵니다. "도착했어요"를 누르면 몇 초 뒤 브리핑 카드가 뜹니다.
 
+### 말동무와 보호자 앱 시험하기
+
+1. 위와 같이 서버를 띄우고 `go run ./cmd/admin seed-demo`로 보호자 계정까지 받습니다 (`guardian login:` 줄).
+2. 두 번째 휴대폰(또는 에뮬레이터)에 보호자 앱을 설치하고 그 계정으로 로그인합니다. 푸시를 받으려면 Firebase 값을 넣어야 합니다.
+3. 보호자 앱 > 어르신 > 설정에서 안부 전화 시각을 **1~2분 뒤**로, 취침 시간을 조금 뒤로 정합니다. 1분마다 도는 틱이 그 시각에 태블릿에서 대화를 시작합니다 (태블릿이 연결되어 있어야 합니다).
+4. 태블릿에서 "말동무" 버튼으로 직접 시작해도 됩니다. "가슴이 아파"라고 말하면 보호자 휴대폰에 위급 알림이 오고, "이제 그만할게"라고 하면 인사말과 함께 대화가 끝납니다.
+5. 취침 시간이 시작되면(또는 `COMPANION_DIGEST_AT`에) 보호자 휴대폰에 그날의 하루 소식이 옵니다. 기다리지 않고 보려면 설정의 취침 시작을 2분 뒤로 옮기세요.
+
 ## CI
 
 PR마다 `.github/workflows/server.yml`(gofmt, go vet, Postgres를 띄운 go test), `app.yml`(dart format, flutter analyze, flutter test), `contracts.yml`(생성 코드가 계약과 같은지)이 돕니다.
 
 ## 다음 단계
 
-[docs/development-process.md](docs/development-process.md)의 단계 6(말동무 모드: 보호자 지정 시각 안부, 하루 요약, 토큰 한도)입니다.
+[docs/development-process.md](docs/development-process.md)의 단계 7(파일럿 준비: 위급 키워드 전문가 검토, 보관 기간과 암호화, 배포 환경, 모니터링)입니다.
 
 ## 참고 문서
 - 기획서: `노치원_AI_브릿지_시스템_기획서.md`
