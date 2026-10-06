@@ -29,10 +29,11 @@ import (
 
 // Connection timings (api/ws-events.md section 1).
 const (
-	pingEvery   = 30 * time.Second
-	readTimeout = 75 * time.Second // two missed pings
-	sendBuffer  = 256
-	maxFrame    = 4 << 20 // one utterance of audio
+	pingEvery    = 30 * time.Second
+	readTimeout  = 75 * time.Second // two missed pings
+	writeTimeout = 10 * time.Second
+	sendBuffer   = 256
+	maxFrame     = 4 << 20 // one utterance of audio
 )
 
 // HubConfig are the Hub's collaborators besides the database and engine.
@@ -157,7 +158,9 @@ func (h *Hub) register(c *conn) {
 	h.byElder[c.tablet.ElderID] = c
 	h.mu.Unlock()
 	if old != nil {
-		old.close(websocket.StatusPolicyViolation, "replaced by a newer connection")
+		// The close handshake waits for the old tablet, which may be gone;
+		// the new connection does not wait with it.
+		go old.close(websocket.StatusPolicyViolation, "replaced by a newer connection")
 	}
 }
 
@@ -261,6 +264,10 @@ func (c *conn) log() *slog.Logger {
 	return c.h.logger.With("device_id", c.tablet.DeviceID, "elder_id", c.tablet.ElderID)
 }
 
+// close stops the connection's work and tells the tablet why. Socket reads
+// and writes use their own timeouts rather than c.ctx: cancelling a context
+// that a pending Read or Write holds drops the socket at once, and the
+// tablet would get EOF instead of the close code.
 func (c *conn) close(code websocket.StatusCode, reason string) {
 	if c.closed.CompareAndSwap(false, true) {
 		c.cancel()
@@ -278,7 +285,7 @@ func (c *conn) run() {
 		return
 	}
 	for {
-		rctx, cancel := context.WithTimeout(c.ctx, readTimeout)
+		rctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		typ, data, err := c.ws.Read(rctx)
 		cancel()
 		if err != nil {
@@ -304,7 +311,10 @@ func (c *conn) writeLoop() {
 			return
 		case frames := <-c.out:
 			for _, f := range frames {
-				if err := c.ws.Write(c.ctx, f.typ, f.data); err != nil {
+				wctx, cancel := context.WithTimeout(context.Background(), writeTimeout)
+				err := c.ws.Write(wctx, f.typ, f.data)
+				cancel()
+				if err != nil {
 					c.close(websocket.StatusInternalError, "write failed")
 					return
 				}
@@ -566,7 +576,7 @@ func (c *conn) elderAudio(env envelope) {
 		}
 	}
 	_ = json.Unmarshal(env.Data, &d)
-	rctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
+	rctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	typ, audio, err := c.ws.Read(rctx)
 	cancel()
 	if err != nil {

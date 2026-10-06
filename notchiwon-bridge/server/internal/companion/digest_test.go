@@ -50,7 +50,8 @@ func (f *fakePush) Send(_ context.Context, token string, m notify.Message) error
 	return nil
 }
 
-const digestDay = "2026-10-06"
+// digestDay is today in Seoul: the talks the tests record happen now.
+var digestDay = time.Now().In(seoul).Format(time.DateOnly)
 
 func digest(t *testing.T, w *DigestWorker, elderID uuid.UUID, date string) error {
 	t.Helper()
