@@ -53,27 +53,6 @@ services:
       redis:
         condition: service_healthy
 
-  # 전환 기간 동안만 남겨둡니다: docker compose --profile legacy up backend
-  backend:
-    profiles: ["legacy"]
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    container_name: notchiwon-backend
-    restart: unless-stopped
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: "postgresql://notchiwon:notchiwon_dev_pw@postgres:5432/notchiwon_bridge?schema=public"
-      REDIS_URL: "redis://redis:6379"
-    ports:
-      - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-
   adminer:
     image: adminer
     container_name: notchiwon-adminer
