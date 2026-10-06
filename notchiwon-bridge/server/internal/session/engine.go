@@ -37,6 +37,23 @@ const (
 	// No caregiver is on the way in a companion session.
 	CompanionFallbackSentence = "네, 말씀 잘 들었어요. 조금 더 이야기해 주세요."
 	GreetingFallbackSentence  = "안녕하세요. 저랑 잠깐 이야기 나눠요."
+	// Closing lines of a companion session (no Claude call).
+	GoodbyeSentence    = "네, 오늘 이야기 즐거웠어요. 편히 쉬세요. 또 이야기 나눠요."
+	TokenLimitSentence = "오늘 이야기 정말 즐거웠어요. 이제 좀 쉬시고, 다음에 또 이야기 나눠요."
+)
+
+// Ended reasons a turn can ask for (conversation_session.ended_reason).
+const (
+	EndElderDeclined = "ELDER_DECLINED"
+	EndTokenLimit    = "TOKEN_LIMIT"
+)
+
+// History compaction: the conversation request keeps the utterances after the
+// saved summary; once more than compactAfter seqs are unsummarized, everything
+// but the last keepSeqs (about ten exchanges) is summarized.
+const (
+	keepSeqs     = 20
+	compactAfter = 30
 )
 
 // Outcome is how a turn ended (ai.turn_end.outcome).
@@ -95,6 +112,9 @@ type TurnResult struct {
 	Escalated bool
 	Trigger   *escalation.TriggerType
 	Outcome   Outcome
+	// End, when set, is the ended_reason the caller should end the session
+	// with now: the AI said goodbye.
+	End string
 }
 
 // Alerter hears about every escalation event the engine records, so the
@@ -107,14 +127,35 @@ type nopAlerter struct{}
 
 func (nopAlerter) EscalationRaised(context.Context, db.EscalationEvent) {}
 
+// Budget is the companion mode's daily token limit.
+type Budget interface {
+	Exhausted(ctx context.Context, elderID uuid.UUID) (bool, error)
+}
+
+type noBudget struct{}
+
+func (noBudget) Exhausted(context.Context, uuid.UUID) (bool, error) { return false, nil }
+
+// Compactor summarizes the early part of a long conversation (upTo is the
+// last seq to fold into the summary).
+type Compactor interface {
+	Compact(ctx context.Context, sessionID uuid.UUID, upTo int32)
+}
+
+type noCompactor struct{}
+
+func (noCompactor) Compact(context.Context, uuid.UUID, int32) {}
+
 // Engine runs conversation turns.
 type Engine struct {
-	q       *db.Queries
-	llm     llm.Client
-	openers *opener.Library
-	cfg     Config
-	logger  *slog.Logger
-	alerter Alerter
+	q         *db.Queries
+	llm       llm.Client
+	openers   *opener.Library
+	cfg       Config
+	logger    *slog.Logger
+	alerter   Alerter
+	budget    Budget
+	compactor Compactor
 
 	mu       sync.Mutex
 	sessions map[uuid.UUID]*sessionState
@@ -135,11 +176,17 @@ type sessionState struct {
 // NewEngine returns an Engine.
 func NewEngine(q *db.Queries, client llm.Client, openers *opener.Library, cfg Config, logger *slog.Logger) *Engine {
 	return &Engine{q: q, llm: client, openers: openers, cfg: cfg, logger: logger, alerter: nopAlerter{},
-		sessions: map[uuid.UUID]*sessionState{}}
+		budget: noBudget{}, compactor: noCompactor{}, sessions: map[uuid.UUID]*sessionState{}}
 }
 
 // SetAlerter sets who hears about escalation events. Call it before serving.
 func (e *Engine) SetAlerter(a Alerter) { e.alerter = a }
+
+// SetBudget sets the companion mode's daily token limit. Call it before serving.
+func (e *Engine) SetBudget(b Budget) { e.budget = b }
+
+// SetCompactor sets who summarizes long conversations. Call it before serving.
+func (e *Engine) SetCompactor(c Compactor) { e.compactor = c }
 
 func (e *Engine) state(sessionID uuid.UUID) *sessionState {
 	e.mu.Lock()
@@ -288,6 +335,26 @@ func (e *Engine) HandleElderText(ctx context.Context, sessionID uuid.UUID, text 
 		return t.result(res, Escalated), nil
 	}
 
+	if sess.Mode == "COMPANION" {
+		end, err := e.closing(wctx, sess, text)
+		if err != nil {
+			return res, err
+		}
+		if end != "" {
+			line := GoodbyeSentence
+			if end == EndTokenLimit {
+				line = TokenLimitSentence
+			}
+			if err := t.reply(line); err != nil {
+				return res, err
+			}
+			sink.TurnEnd(sessionID, res.Turn, Completed, len(t.replies))
+			res = t.result(res, Completed)
+			res.End = end
+			return res, nil
+		}
+	}
+
 	if tctx.Err() != nil {
 		// A newer utterance arrived while this one was being saved.
 		sink.TurnEnd(sessionID, res.Turn, Cancelled, 0)
@@ -324,7 +391,33 @@ func (e *Engine) HandleElderText(ctx context.Context, sessionID uuid.UUID, text 
 		e.alerter.EscalationRaised(wctx, ev)
 		e.logger.WarnContext(ctx, "llm concern", "session_id", sessionID, "type", c.Type, "reason", c.Reason)
 	}
+	if through := int32(-1); res.Turn-keepSeqs > 0 {
+		if sess.HistorySummaryThrough != nil {
+			through = *sess.HistorySummaryThrough
+		}
+		if res.Turn-through > compactAfter {
+			e.compactor.Compact(wctx, sessionID, res.Turn-keepSeqs)
+		}
+	}
 	return t.result(res, outcome), nil
+}
+
+// closing decides whether a companion turn ends the conversation instead of
+// calling Claude: the elder said goodbye, or today's tokens are used up.
+func (e *Engine) closing(ctx context.Context, sess db.ConversationSession, text string) (string, error) {
+	if WantsToStop(text) {
+		return EndElderDeclined, nil
+	}
+	over, err := e.budget.Exhausted(ctx, sess.ElderID)
+	if err != nil {
+		// Talking on is better than cutting the elder off over a read error.
+		e.logger.ErrorContext(ctx, "check token budget failed", "session_id", sess.ID, "err", err)
+		return "", nil
+	}
+	if over {
+		return EndTokenLimit, nil
+	}
+	return "", nil
 }
 
 // Greet says the AI's opening line (turn 0) of a session that has none yet.
@@ -389,10 +482,22 @@ func (e *Engine) request(ctx context.Context, sess db.ConversationSession, elder
 	if err != nil {
 		return llm.Request{}, fmt.Errorf("read utterances: %w", err)
 	}
-	return llm.Request{
-		System:   llm.SystemPrompt(sess.Mode, elder.Name, words),
-		Messages: buildMessages(history),
-	}, nil
+	system := llm.SystemPrompt(sess.Mode, elder.Name, words)
+	if sess.HistorySummary != nil && sess.HistorySummaryThrough != nil {
+		system = append(system, llm.HistoryBlock(*sess.HistorySummary))
+		history = after(history, *sess.HistorySummaryThrough)
+	}
+	return llm.Request{System: system, Messages: buildMessages(history)}, nil
+}
+
+// after drops the utterances folded into the history summary.
+func after(us []db.Utterance, through int32) []db.Utterance {
+	for i, u := range us {
+		if u.Seq > through {
+			return us[i:]
+		}
+	}
+	return nil
 }
 
 // buildMessages turns the saved utterances into Messages API turns (spec

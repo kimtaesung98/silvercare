@@ -17,7 +17,7 @@ UPDATE escalation_event
 SET acknowledged_at = COALESCE(acknowledged_at, now()),
     acknowledged_by_caregiver_id = COALESCE(acknowledged_by_caregiver_id, $1)
 WHERE id = $2
-RETURNING id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at
+RETURNING id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at, acknowledged_by_guardian_id
 `
 
 type AcknowledgeEscalationParams struct {
@@ -42,6 +42,7 @@ func (q *Queries) AcknowledgeEscalation(ctx context.Context, arg AcknowledgeEsca
 		&i.AcknowledgedAt,
 		&i.AcknowledgedByCaregiverID,
 		&i.ResolvedAt,
+		&i.AcknowledgedByGuardianID,
 	)
 	return i, err
 }
@@ -52,7 +53,7 @@ VALUES (
     $1, $2, $3, $4,
     $5, $6, $7
 )
-RETURNING id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at
+RETURNING id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at, acknowledged_by_guardian_id
 `
 
 type CreateEscalationEventParams struct {
@@ -89,13 +90,14 @@ func (q *Queries) CreateEscalationEvent(ctx context.Context, arg CreateEscalatio
 		&i.AcknowledgedAt,
 		&i.AcknowledgedByCaregiverID,
 		&i.ResolvedAt,
+		&i.AcknowledgedByGuardianID,
 	)
 	return i, err
 }
 
 const getEscalationDetail = `-- name: GetEscalationDetail :one
 SELECT
-    escalation_event.id, escalation_event.session_id, escalation_event.utterance_id, escalation_event.trigger_type, escalation_event.source, escalation_event.rule_id, escalation_event.reason, escalation_event.notified_targets, escalation_event.created_at, escalation_event.acknowledged_at, escalation_event.acknowledged_by_caregiver_id, escalation_event.resolved_at,
+    escalation_event.id, escalation_event.session_id, escalation_event.utterance_id, escalation_event.trigger_type, escalation_event.source, escalation_event.rule_id, escalation_event.reason, escalation_event.notified_targets, escalation_event.created_at, escalation_event.acknowledged_at, escalation_event.acknowledged_by_caregiver_id, escalation_event.resolved_at, escalation_event.acknowledged_by_guardian_id,
     elder.id AS elder_id,
     elder.name AS elder_name,
     utterance.text AS utterance_text,
@@ -136,6 +138,7 @@ func (q *Queries) GetEscalationDetail(ctx context.Context, id uuid.UUID) (GetEsc
 		&i.EscalationEvent.AcknowledgedAt,
 		&i.EscalationEvent.AcknowledgedByCaregiverID,
 		&i.EscalationEvent.ResolvedAt,
+		&i.EscalationEvent.AcknowledgedByGuardianID,
 		&i.ElderID,
 		&i.ElderName,
 		&i.UtteranceText,
@@ -146,7 +149,7 @@ func (q *Queries) GetEscalationDetail(ctx context.Context, id uuid.UUID) (GetEsc
 }
 
 const getEscalationEvent = `-- name: GetEscalationEvent :one
-SELECT id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at FROM escalation_event WHERE id = $1
+SELECT id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at, acknowledged_by_guardian_id FROM escalation_event WHERE id = $1
 `
 
 func (q *Queries) GetEscalationEvent(ctx context.Context, id uuid.UUID) (EscalationEvent, error) {
@@ -165,13 +168,66 @@ func (q *Queries) GetEscalationEvent(ctx context.Context, id uuid.UUID) (Escalat
 		&i.AcknowledgedAt,
 		&i.AcknowledgedByCaregiverID,
 		&i.ResolvedAt,
+		&i.AcknowledgedByGuardianID,
 	)
 	return i, err
 }
 
+const listElderEscalationsBetween = `-- name: ListElderEscalationsBetween :many
+SELECT escalation_event.id, escalation_event.session_id, escalation_event.utterance_id, escalation_event.trigger_type, escalation_event.source, escalation_event.rule_id, escalation_event.reason, escalation_event.notified_targets, escalation_event.created_at, escalation_event.acknowledged_at, escalation_event.acknowledged_by_caregiver_id, escalation_event.resolved_at, escalation_event.acknowledged_by_guardian_id
+FROM escalation_event
+JOIN conversation_session ON conversation_session.id = escalation_event.session_id
+WHERE conversation_session.elder_id = $1
+  AND conversation_session.mode = 'COMPANION'
+  AND escalation_event.created_at >= $2
+  AND escalation_event.created_at < $3
+ORDER BY escalation_event.created_at
+`
+
+type ListElderEscalationsBetweenParams struct {
+	ElderID  uuid.UUID `json:"elder_id"`
+	FromTime time.Time `json:"from_time"`
+	ToTime   time.Time `json:"to_time"`
+}
+
+// 하루 요약용: 그날 말동무 대화에서 감지한 위급.
+func (q *Queries) ListElderEscalationsBetween(ctx context.Context, arg ListElderEscalationsBetweenParams) ([]EscalationEvent, error) {
+	rows, err := q.db.Query(ctx, listElderEscalationsBetween, arg.ElderID, arg.FromTime, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EscalationEvent{}
+	for rows.Next() {
+		var i EscalationEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.UtteranceID,
+			&i.TriggerType,
+			&i.Source,
+			&i.RuleID,
+			&i.Reason,
+			&i.NotifiedTargets,
+			&i.CreatedAt,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedByCaregiverID,
+			&i.ResolvedAt,
+			&i.AcknowledgedByGuardianID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listOpenEscalationsForCaregiver = `-- name: ListOpenEscalationsForCaregiver :many
 SELECT
-    escalation_event.id, escalation_event.session_id, escalation_event.utterance_id, escalation_event.trigger_type, escalation_event.source, escalation_event.rule_id, escalation_event.reason, escalation_event.notified_targets, escalation_event.created_at, escalation_event.acknowledged_at, escalation_event.acknowledged_by_caregiver_id, escalation_event.resolved_at,
+    escalation_event.id, escalation_event.session_id, escalation_event.utterance_id, escalation_event.trigger_type, escalation_event.source, escalation_event.rule_id, escalation_event.reason, escalation_event.notified_targets, escalation_event.created_at, escalation_event.acknowledged_at, escalation_event.acknowledged_by_caregiver_id, escalation_event.resolved_at, escalation_event.acknowledged_by_guardian_id,
     elder.id AS elder_id,
     elder.name AS elder_name,
     utterance.text AS utterance_text,
@@ -225,6 +281,7 @@ func (q *Queries) ListOpenEscalationsForCaregiver(ctx context.Context, arg ListO
 			&i.EscalationEvent.AcknowledgedAt,
 			&i.EscalationEvent.AcknowledgedByCaregiverID,
 			&i.EscalationEvent.ResolvedAt,
+			&i.EscalationEvent.AcknowledgedByGuardianID,
 			&i.ElderID,
 			&i.ElderName,
 			&i.UtteranceText,
@@ -242,7 +299,7 @@ func (q *Queries) ListOpenEscalationsForCaregiver(ctx context.Context, arg ListO
 }
 
 const listSessionEscalations = `-- name: ListSessionEscalations :many
-SELECT id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at FROM escalation_event WHERE session_id = $1 ORDER BY created_at
+SELECT id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at, acknowledged_by_guardian_id FROM escalation_event WHERE session_id = $1 ORDER BY created_at
 `
 
 func (q *Queries) ListSessionEscalations(ctx context.Context, sessionID uuid.UUID) ([]EscalationEvent, error) {
@@ -267,6 +324,7 @@ func (q *Queries) ListSessionEscalations(ctx context.Context, sessionID uuid.UUI
 			&i.AcknowledgedAt,
 			&i.AcknowledgedByCaregiverID,
 			&i.ResolvedAt,
+			&i.AcknowledgedByGuardianID,
 		); err != nil {
 			return nil, err
 		}

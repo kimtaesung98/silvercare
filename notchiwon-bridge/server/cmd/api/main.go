@@ -17,6 +17,7 @@ import (
 
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/briefing"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/companion"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/config"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/eta"
@@ -77,10 +78,13 @@ func run() error {
 	var (
 		claude     llm.Client     = llm.Unavailable{}
 		summarizer llm.Summarizer = llm.Unavailable{}
+		compacter  llm.Compacter  = llm.Unavailable{}
+		digester   llm.Digester   = llm.Unavailable{}
 	)
 	if cfg.AnthropicAPIKey != "" {
 		claude = llm.NewAnthropic(cfg.AnthropicAPIKey, cfg.ConversationModel)
-		summarizer = llm.NewAnthropicSummarizer(llm.NewAnthropic(cfg.AnthropicAPIKey, cfg.SummaryModel))
+		haiku := llm.NewAnthropicSummarizer(llm.NewAnthropic(cfg.AnthropicAPIKey, cfg.SummaryModel))
+		summarizer, compacter, digester = haiku, haiku, haiku
 	} else {
 		logger.Warn("ANTHROPIC_API_KEY is empty: every turn ends with the fallback sentence, briefings quote the elder")
 	}
@@ -102,10 +106,18 @@ func run() error {
 	} else {
 		logger.Warn("NAVER_CLOVA_CLIENT_ID/SECRET are empty: text mode only (no speech recognition or synthesis)")
 	}
-	hub, err := session.NewHub(q, engine, openers, session.HubConfig{PromptVersion: llm.PromptVersion, STT: stt, TTS: tts}, logger)
+	policy := companion.Policy{
+		Q:                 q,
+		DefaultTokenLimit: cfg.CompanionDailyTokenLimit,
+		Location:          loc,
+	}
+	hub, err := session.NewHub(q, engine, openers, session.HubConfig{
+		PromptVersion: llm.PromptVersion, STT: stt, TTS: tts, CanStart: policy.CanStart,
+	}, logger)
 	if err != nil {
 		return err
 	}
+	engine.SetBudget(policy)
 	logger.Info("conversation engine ready", "model", cfg.ConversationModel, "prompt_version", llm.PromptVersion)
 
 	// Background jobs: escalation pushes and arrival briefings.
@@ -123,9 +135,17 @@ func run() error {
 	} else {
 		logger.Warn("FCM_CREDENTIALS_FILE is empty: escalations are not pushed, only listed in the caregiver app")
 	}
+	digestAt, err := companion.ParseClock(cfg.CompanionDigestAt)
+	if err != nil {
+		return fmt.Errorf("COMPANION_DIGEST_AT: %w", err)
+	}
 	workers := river.NewWorkers()
 	river.AddWorker(workers, &notify.EscalationWorker{Queries: q, Sender: sender, Logger: logger})
 	river.AddWorker(workers, &briefing.Worker{Pool: pool, Summarizer: summarizer, Logger: logger})
+	river.AddWorker(workers, &companion.HistoryWorker{Queries: q, Compacter: compacter, Logger: logger})
+	river.AddWorker(workers, &companion.DigestWorker{
+		Queries: q, Digester: digester, Sender: sender, Policy: policy, Logger: logger,
+	})
 	queue, err := jobs.NewClient(pool, workers, logger)
 	if err != nil {
 		return err
@@ -135,6 +155,12 @@ func run() error {
 	}
 	enqueuer := jobs.Enqueuer{Client: queue, Logger: logger}
 	engine.SetAlerter(enqueuer)
+	engine.SetCompactor(enqueuer)
+	hub.AlsoNotify(enqueuer)
+	river.AddWorker(workers, &companion.TickWorker{
+		Queries: q, Policy: policy, Tablets: hub, Queue: enqueuer, Logger: logger,
+		IdleAfter: cfg.CompanionIdleAfter, DigestAt: digestAt, PromptVersion: llm.PromptVersion,
+	})
 
 	var estimator eta.Estimator = eta.Schedule{}
 	if cfg.KakaoMobilityAPIKey != "" {
@@ -151,13 +177,14 @@ func run() error {
 	srv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.Port),
 		Handler: httpapi.NewRouter(httpapi.Deps{
-			Pool:    pool,
-			Visits:  visits,
-			Tokens:  auth.NewTokens(cfg.AuthSecret, cfg.CaregiverTokenTTL),
-			Openers: openers,
-			TTS:     tts,
-			ElderWS: hub,
-			Logger:  logger,
+			Pool:     pool,
+			Visits:   visits,
+			Tokens:   auth.NewTokens(cfg.AuthSecret, cfg.CaregiverTokenTTL),
+			Openers:  openers,
+			TTS:      tts,
+			ElderWS:  hub,
+			Location: loc,
+			Logger:   logger,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

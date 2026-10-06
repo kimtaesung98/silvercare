@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -14,7 +15,7 @@ import (
 const createCompanionSession = `-- name: CreateCompanionSession :one
 INSERT INTO conversation_session (elder_id, mode, started_by, prompt_version)
 VALUES ($1, 'COMPANION', $2, $3)
-RETURNING id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version
+RETURNING id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version, history_summary, history_summary_through
 `
 
 type CreateCompanionSessionParams struct {
@@ -39,6 +40,8 @@ func (q *Queries) CreateCompanionSession(ctx context.Context, arg CreateCompanio
 		&i.OverallEmotionTag,
 		&i.EndedReason,
 		&i.PromptVersion,
+		&i.HistorySummary,
+		&i.HistorySummaryThrough,
 	)
 	return i, err
 }
@@ -46,7 +49,7 @@ func (q *Queries) CreateCompanionSession(ctx context.Context, arg CreateCompanio
 const createPickupSession = `-- name: CreatePickupSession :one
 INSERT INTO conversation_session (visit_id, elder_id, mode, started_by, trigger_eta_minutes, prompt_version)
 VALUES ($1, $2, 'PICKUP_BRIDGE', 'SYSTEM', $3, $4)
-RETURNING id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version
+RETURNING id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version, history_summary, history_summary_through
 `
 
 type CreatePickupSessionParams struct {
@@ -76,6 +79,8 @@ func (q *Queries) CreatePickupSession(ctx context.Context, arg CreatePickupSessi
 		&i.OverallEmotionTag,
 		&i.EndedReason,
 		&i.PromptVersion,
+		&i.HistorySummary,
+		&i.HistorySummaryThrough,
 	)
 	return i, err
 }
@@ -86,7 +91,7 @@ SET ended_at = now(),
     ended_reason = $1
 WHERE id = $2
   AND ended_at IS NULL
-RETURNING id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version
+RETURNING id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version, history_summary, history_summary_through
 `
 
 type EndSessionParams struct {
@@ -110,12 +115,14 @@ func (q *Queries) EndSession(ctx context.Context, arg EndSessionParams) (Convers
 		&i.OverallEmotionTag,
 		&i.EndedReason,
 		&i.PromptVersion,
+		&i.HistorySummary,
+		&i.HistorySummaryThrough,
 	)
 	return i, err
 }
 
 const getOpenSessionForElder = `-- name: GetOpenSessionForElder :one
-SELECT id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version FROM conversation_session WHERE elder_id = $1 AND ended_at IS NULL
+SELECT id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version, history_summary, history_summary_through FROM conversation_session WHERE elder_id = $1 AND ended_at IS NULL
 `
 
 func (q *Queries) GetOpenSessionForElder(ctx context.Context, elderID uuid.UUID) (ConversationSession, error) {
@@ -133,12 +140,14 @@ func (q *Queries) GetOpenSessionForElder(ctx context.Context, elderID uuid.UUID)
 		&i.OverallEmotionTag,
 		&i.EndedReason,
 		&i.PromptVersion,
+		&i.HistorySummary,
+		&i.HistorySummaryThrough,
 	)
 	return i, err
 }
 
 const getSession = `-- name: GetSession :one
-SELECT id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version FROM conversation_session WHERE id = $1
+SELECT id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version, history_summary, history_summary_through FROM conversation_session WHERE id = $1
 `
 
 func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (ConversationSession, error) {
@@ -156,12 +165,14 @@ func (q *Queries) GetSession(ctx context.Context, id uuid.UUID) (ConversationSes
 		&i.OverallEmotionTag,
 		&i.EndedReason,
 		&i.PromptVersion,
+		&i.HistorySummary,
+		&i.HistorySummaryThrough,
 	)
 	return i, err
 }
 
 const getSessionByVisit = `-- name: GetSessionByVisit :one
-SELECT id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version FROM conversation_session WHERE visit_id = $1
+SELECT id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version, history_summary, history_summary_through FROM conversation_session WHERE visit_id = $1
 `
 
 func (q *Queries) GetSessionByVisit(ctx context.Context, visitID *uuid.UUID) (ConversationSession, error) {
@@ -179,13 +190,15 @@ func (q *Queries) GetSessionByVisit(ctx context.Context, visitID *uuid.UUID) (Co
 		&i.OverallEmotionTag,
 		&i.EndedReason,
 		&i.PromptVersion,
+		&i.HistorySummary,
+		&i.HistorySummaryThrough,
 	)
 	return i, err
 }
 
 const getSessionOwner = `-- name: GetSessionOwner :one
 SELECT
-    conversation_session.id, conversation_session.visit_id, conversation_session.elder_id, conversation_session.mode, conversation_session.started_by, conversation_session.started_at, conversation_session.ended_at, conversation_session.trigger_eta_minutes, conversation_session.overall_emotion_tag, conversation_session.ended_reason, conversation_session.prompt_version,
+    conversation_session.id, conversation_session.visit_id, conversation_session.elder_id, conversation_session.mode, conversation_session.started_by, conversation_session.started_at, conversation_session.ended_at, conversation_session.trigger_eta_minutes, conversation_session.overall_emotion_tag, conversation_session.ended_reason, conversation_session.prompt_version, conversation_session.history_summary, conversation_session.history_summary_through,
     elder.name AS elder_name,
     visit.caregiver_id AS caregiver_id
 FROM conversation_session
@@ -216,10 +229,183 @@ func (q *Queries) GetSessionOwner(ctx context.Context, id uuid.UUID) (GetSession
 		&i.ConversationSession.OverallEmotionTag,
 		&i.ConversationSession.EndedReason,
 		&i.ConversationSession.PromptVersion,
+		&i.ConversationSession.HistorySummary,
+		&i.ConversationSession.HistorySummaryThrough,
 		&i.ElderName,
 		&i.CaregiverID,
 	)
 	return i, err
+}
+
+const hasScheduledSessionSince = `-- name: HasScheduledSessionSince :one
+SELECT EXISTS (
+    SELECT 1 FROM conversation_session
+    WHERE elder_id = $1
+      AND started_by = 'SCHEDULE'
+      AND started_at >= $2
+) AS started
+`
+
+type HasScheduledSessionSinceParams struct {
+	ElderID uuid.UUID `json:"elder_id"`
+	Since   time.Time `json:"since"`
+}
+
+// 그 안부 시각에 이미 안부 대화를 시작했는지.
+func (q *Queries) HasScheduledSessionSince(ctx context.Context, arg HasScheduledSessionSinceParams) (bool, error) {
+	row := q.db.QueryRow(ctx, hasScheduledSessionSince, arg.ElderID, arg.Since)
+	var started bool
+	err := row.Scan(&started)
+	return started, err
+}
+
+const listElderSessionsBetween = `-- name: ListElderSessionsBetween :many
+SELECT
+    conversation_session.id, conversation_session.visit_id, conversation_session.elder_id, conversation_session.mode, conversation_session.started_by, conversation_session.started_at, conversation_session.ended_at, conversation_session.trigger_eta_minutes, conversation_session.overall_emotion_tag, conversation_session.ended_reason, conversation_session.prompt_version, conversation_session.history_summary, conversation_session.history_summary_through,
+    briefing_report.summary_text,
+    briefing_report.emotion_flag
+FROM conversation_session
+LEFT JOIN briefing_report ON briefing_report.session_id = conversation_session.id
+WHERE conversation_session.elder_id = $1
+  AND conversation_session.mode = 'COMPANION'
+  AND conversation_session.started_at >= $2
+  AND conversation_session.started_at < $3
+ORDER BY conversation_session.started_at
+`
+
+type ListElderSessionsBetweenParams struct {
+	ElderID  uuid.UUID `json:"elder_id"`
+	FromTime time.Time `json:"from_time"`
+	ToTime   time.Time `json:"to_time"`
+}
+
+type ListElderSessionsBetweenRow struct {
+	ConversationSession ConversationSession `json:"conversation_session"`
+	SummaryText         *string             `json:"summary_text"`
+	EmotionFlag         *string             `json:"emotion_flag"`
+}
+
+// 하루 요약용: 그날 끝난 말동무 세션과 브리핑(없으면 NULL).
+func (q *Queries) ListElderSessionsBetween(ctx context.Context, arg ListElderSessionsBetweenParams) ([]ListElderSessionsBetweenRow, error) {
+	rows, err := q.db.Query(ctx, listElderSessionsBetween, arg.ElderID, arg.FromTime, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListElderSessionsBetweenRow{}
+	for rows.Next() {
+		var i ListElderSessionsBetweenRow
+		if err := rows.Scan(
+			&i.ConversationSession.ID,
+			&i.ConversationSession.VisitID,
+			&i.ConversationSession.ElderID,
+			&i.ConversationSession.Mode,
+			&i.ConversationSession.StartedBy,
+			&i.ConversationSession.StartedAt,
+			&i.ConversationSession.EndedAt,
+			&i.ConversationSession.TriggerEtaMinutes,
+			&i.ConversationSession.OverallEmotionTag,
+			&i.ConversationSession.EndedReason,
+			&i.ConversationSession.PromptVersion,
+			&i.ConversationSession.HistorySummary,
+			&i.ConversationSession.HistorySummaryThrough,
+			&i.SummaryText,
+			&i.EmotionFlag,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEldersWithCompanionBetween = `-- name: ListEldersWithCompanionBetween :many
+SELECT DISTINCT elder_id
+FROM conversation_session
+WHERE mode = 'COMPANION'
+  AND started_at >= $1
+  AND started_at < $2
+`
+
+type ListEldersWithCompanionBetweenParams struct {
+	FromTime time.Time `json:"from_time"`
+	ToTime   time.Time `json:"to_time"`
+}
+
+// 하루 요약을 만들 어르신: 그날 말동무 대화가 있었던 어르신.
+func (q *Queries) ListEldersWithCompanionBetween(ctx context.Context, arg ListEldersWithCompanionBetweenParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, listEldersWithCompanionBetween, arg.FromTime, arg.ToTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var elder_id uuid.UUID
+		if err := rows.Scan(&elder_id); err != nil {
+			return nil, err
+		}
+		items = append(items, elder_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listOpenCompanionSessions = `-- name: ListOpenCompanionSessions :many
+SELECT
+    conversation_session.id, conversation_session.visit_id, conversation_session.elder_id, conversation_session.mode, conversation_session.started_by, conversation_session.started_at, conversation_session.ended_at, conversation_session.trigger_eta_minutes, conversation_session.overall_emotion_tag, conversation_session.ended_reason, conversation_session.prompt_version, conversation_session.history_summary, conversation_session.history_summary_through,
+    COALESCE(
+        (SELECT max(u.created_at) FROM utterance u WHERE u.session_id = conversation_session.id),
+        conversation_session.started_at
+    )::timestamptz AS last_activity_at
+FROM conversation_session
+WHERE mode = 'COMPANION' AND ended_at IS NULL
+`
+
+type ListOpenCompanionSessionsRow struct {
+	ConversationSession ConversationSession `json:"conversation_session"`
+	LastActivityAt      time.Time           `json:"last_activity_at"`
+}
+
+// 무응답·취침 시간 종료를 확인할 진행 중 말동무 세션과 마지막 발화 시각.
+func (q *Queries) ListOpenCompanionSessions(ctx context.Context) ([]ListOpenCompanionSessionsRow, error) {
+	rows, err := q.db.Query(ctx, listOpenCompanionSessions)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOpenCompanionSessionsRow{}
+	for rows.Next() {
+		var i ListOpenCompanionSessionsRow
+		if err := rows.Scan(
+			&i.ConversationSession.ID,
+			&i.ConversationSession.VisitID,
+			&i.ConversationSession.ElderID,
+			&i.ConversationSession.Mode,
+			&i.ConversationSession.StartedBy,
+			&i.ConversationSession.StartedAt,
+			&i.ConversationSession.EndedAt,
+			&i.ConversationSession.TriggerEtaMinutes,
+			&i.ConversationSession.OverallEmotionTag,
+			&i.ConversationSession.EndedReason,
+			&i.ConversationSession.PromptVersion,
+			&i.ConversationSession.HistorySummary,
+			&i.ConversationSession.HistorySummaryThrough,
+			&i.LastActivityAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const preemptCompanionSession = `-- name: PreemptCompanionSession :one
@@ -229,7 +415,7 @@ SET ended_at = now(),
 WHERE elder_id = $1
   AND mode = 'COMPANION'
   AND ended_at IS NULL
-RETURNING id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version
+RETURNING id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version, history_summary, history_summary_through
 `
 
 // 픽업 대기 세션을 시작하기 전에 진행 중인 말동무 세션을 끝냅니다. 없으면 행이 없습니다.
@@ -248,8 +434,30 @@ func (q *Queries) PreemptCompanionSession(ctx context.Context, elderID uuid.UUID
 		&i.OverallEmotionTag,
 		&i.EndedReason,
 		&i.PromptVersion,
+		&i.HistorySummary,
+		&i.HistorySummaryThrough,
 	)
 	return i, err
+}
+
+const setHistorySummary = `-- name: SetHistorySummary :exec
+UPDATE conversation_session
+SET history_summary = $1,
+    history_summary_through = $2
+WHERE id = $3
+  AND (history_summary_through IS NULL OR history_summary_through < $2)
+`
+
+type SetHistorySummaryParams struct {
+	Summary *string   `json:"summary"`
+	Through *int32    `json:"through"`
+	ID      uuid.UUID `json:"id"`
+}
+
+// 더 앞선 요약으로 덮어쓰지 않습니다(작업이 늦게 끝나도 안전).
+func (q *Queries) SetHistorySummary(ctx context.Context, arg SetHistorySummaryParams) error {
+	_, err := q.db.Exec(ctx, setHistorySummary, arg.Summary, arg.Through, arg.ID)
+	return err
 }
 
 const setSessionEmotionTag = `-- name: SetSessionEmotionTag :exec

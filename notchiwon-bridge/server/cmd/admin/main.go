@@ -2,6 +2,7 @@
 //
 //	admin create-tablet -elder <elder id> [-label 거실 태블릿]   prints a new tablet token
 //	admin set-caregiver-login -caregiver <id> -login <login id>  reads the password from stdin
+//	admin set-guardian-login -guardian <id> -login <login id>    reads the password from stdin
 //	admin seed-demo                                             adds a demo center, elder, caregiver, visit and tablet
 //	admin synth-openers                                         synthesizes missing opener clip audio with Clova TTS
 //
@@ -37,7 +38,7 @@ func main() {
 	}
 }
 
-const usage = "usage: admin create-tablet | set-caregiver-login | seed-demo | synth-openers (see -h of each)"
+const usage = "usage: admin create-tablet | set-caregiver-login | set-guardian-login | seed-demo | synth-openers (see -h of each)"
 
 func run(ctx context.Context, args []string, stdin io.Reader, out io.Writer) error {
 	if len(args) == 0 {
@@ -58,6 +59,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, out io.Writer) err
 		return createTablet(ctx, pool, args[1:], out)
 	case "set-caregiver-login":
 		return setCaregiverLogin(ctx, pool, args[1:], stdin, out)
+	case "set-guardian-login":
+		return setGuardianLogin(ctx, pool, args[1:], stdin, out)
 	case "seed-demo":
 		return seedDemo(ctx, pool, out)
 	case "synth-openers":
@@ -101,15 +104,33 @@ func newTablet(ctx context.Context, q *db.Queries, elderID uuid.UUID, label stri
 }
 
 func setCaregiverLogin(ctx context.Context, pool *pgxpool.Pool, args []string, stdin io.Reader, out io.Writer) error {
-	fs := flag.NewFlagSet("set-caregiver-login", flag.ContinueOnError)
-	caregiver := fs.String("caregiver", "", "caregiver id")
+	return setAccountLogin(ctx, pool, "caregiver", args, stdin, out, setLogin)
+}
+
+func setGuardianLogin(ctx context.Context, pool *pgxpool.Pool, args []string, stdin io.Reader, out io.Writer) error {
+	return setAccountLogin(ctx, pool, "guardian", args, stdin, out, setGuardianPassword)
+}
+
+// setAccountLogin reads the id, the login and the password (from stdin, so it
+// stays out of the shell history) and stores the hash with save.
+func setAccountLogin(
+	ctx context.Context,
+	pool *pgxpool.Pool,
+	who string,
+	args []string,
+	stdin io.Reader,
+	out io.Writer,
+	save func(context.Context, *db.Queries, uuid.UUID, string, string) error,
+) error {
+	fs := flag.NewFlagSet("set-"+who+"-login", flag.ContinueOnError)
+	target := fs.String(who, "", who+" id")
 	login := fs.String("login", "", "login id")
 	if err := fs.Parse(args); err != nil {
 		return err
 	}
-	id, err := uuid.Parse(*caregiver)
+	id, err := uuid.Parse(*target)
 	if err != nil {
-		return fmt.Errorf("-caregiver: %w", err)
+		return fmt.Errorf("-%s: %w", who, err)
 	}
 	if *login == "" {
 		return errors.New("-login is required")
@@ -123,10 +144,10 @@ func setCaregiverLogin(ctx context.Context, pool *pgxpool.Pool, args []string, s
 	if len(pw) < 8 {
 		return errors.New("password must be at least 8 characters")
 	}
-	if err := setLogin(ctx, db.New(pool), id, *login, pw); err != nil {
+	if err := save(ctx, db.New(pool), id, *login, pw); err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "\nlogin set for caregiver %s\n", id)
+	fmt.Fprintf(out, "\nlogin set for %s %s\n", who, id)
 	return nil
 }
 
@@ -142,13 +163,27 @@ func setLogin(ctx context.Context, q *db.Queries, id uuid.UUID, login, password 
 	return err
 }
 
+func setGuardianPassword(ctx context.Context, q *db.Queries, id uuid.UUID, login, password string) error {
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	_, err = q.SetGuardianLogin(ctx, db.SetGuardianLoginParams{ID: id, LoginID: &login, PasswordHash: &hash})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return fmt.Errorf("guardian %s not found", id)
+	}
+	return err
+}
+
 // seedDemo adds one center with an elder, a caregiver who can log in, a visit
 // 30 minutes from now and the elder's tablet, for trying the API locally.
 func seedDemo(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
 	login := "demo-" + uuid.NewString()[:6]
 	password := uuid.NewString()[:12]
+	guardianLogin := "demo-g-" + uuid.NewString()[:6]
+	guardianPassword := uuid.NewString()[:12]
 	var token string
-	var elderID, caregiverID, visitID uuid.UUID
+	var elderID, caregiverID, visitID, guardianID uuid.UUID
 	err := pgx.BeginFunc(ctx, pool, func(tx pgx.Tx) error {
 		err := tx.QueryRow(ctx, `
 			WITH g AS (INSERT INTO guardian (name, phone) VALUES ('데모 보호자', '010-0000-0000') RETURNING id),
@@ -156,17 +191,20 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
 			     e AS (INSERT INTO elder (name, birth_date, dementia_stage, guardian_id, center_id,
 			                              home_address, home_latitude, home_longitude)
 			           SELECT '김순자', '1940-03-01', 'MILD', g.id, c.id,
-			                  '서울 종로구 세종대로 175', 37.5725, 126.9769 FROM g, c RETURNING id, center_id),
+			                  '서울 종로구 세종대로 175', 37.5725, 126.9769 FROM g, c RETURNING id, center_id, guardian_id),
 			     cg AS (INSERT INTO caregiver (name, center_id) SELECT '이조무', e.center_id FROM e RETURNING id),
 			     v AS (INSERT INTO visit (elder_id, caregiver_id, scheduled_time)
 			           SELECT e.id, cg.id, $1 FROM e, cg RETURNING id)
-			SELECT e.id, cg.id, v.id FROM e, cg, v`, time.Now().Add(30*time.Minute),
-		).Scan(&elderID, &caregiverID, &visitID)
+			SELECT e.id, e.guardian_id, cg.id, v.id FROM e, cg, v`, time.Now().Add(30*time.Minute),
+		).Scan(&elderID, &guardianID, &caregiverID, &visitID)
 		if err != nil {
 			return err
 		}
 		q := db.New(tx)
 		if err := setLogin(ctx, q, caregiverID, login, password); err != nil {
+			return err
+		}
+		if err := setGuardianPassword(ctx, q, guardianID, guardianLogin, guardianPassword); err != nil {
 			return err
 		}
 		token, err = newTablet(ctx, q, elderID, "데모 태블릿")
@@ -175,8 +213,8 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
 	if err != nil {
 		return fmt.Errorf("seed demo: %w", err)
 	}
-	fmt.Fprintf(out, "caregiver login: %s / %s\nelder: %s\nvisit (in 30 min): %s\ntablet token: %s\n",
-		login, password, elderID, visitID, token)
+	fmt.Fprintf(out, "caregiver login: %s / %s\nguardian login: %s / %s\nelder: %s\nvisit (in 30 min): %s\ntablet token: %s\n",
+		login, password, guardianLogin, guardianPassword, elderID, visitID, token)
 	return nil
 }
 

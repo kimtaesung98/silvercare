@@ -85,6 +85,135 @@ func (q *Queries) GetElder(ctx context.Context, id uuid.UUID) (Elder, error) {
 	return i, err
 }
 
+const getElderGuardian = `-- name: GetElderGuardian :one
+SELECT
+    elder.id AS elder_id,
+    elder.name AS elder_name,
+    elder.center_id,
+    guardian.id AS guardian_id,
+    guardian.name AS guardian_name,
+    guardian.phone AS guardian_phone
+FROM elder
+JOIN guardian ON guardian.id = elder.guardian_id
+WHERE elder.id = $1
+`
+
+type GetElderGuardianRow struct {
+	ElderID       uuid.UUID `json:"elder_id"`
+	ElderName     string    `json:"elder_name"`
+	CenterID      uuid.UUID `json:"center_id"`
+	GuardianID    uuid.UUID `json:"guardian_id"`
+	GuardianName  string    `json:"guardian_name"`
+	GuardianPhone string    `json:"guardian_phone"`
+}
+
+func (q *Queries) GetElderGuardian(ctx context.Context, id uuid.UUID) (GetElderGuardianRow, error) {
+	row := q.db.QueryRow(ctx, getElderGuardian, id)
+	var i GetElderGuardianRow
+	err := row.Scan(
+		&i.ElderID,
+		&i.ElderName,
+		&i.CenterID,
+		&i.GuardianID,
+		&i.GuardianName,
+		&i.GuardianPhone,
+	)
+	return i, err
+}
+
+const insertDailyDigest = `-- name: InsertDailyDigest :one
+INSERT INTO daily_digest (elder_id, digest_date, summary_text, emotion_flag, session_count, escalation_count, total_tokens, model)
+VALUES (
+    $1, $2, $3, $4,
+    $5, $6, $7, $8
+)
+ON CONFLICT (elder_id, digest_date) DO NOTHING
+RETURNING id, elder_id, digest_date, summary_text, emotion_flag, session_count, escalation_count, total_tokens, model, generated_at, sent_at
+`
+
+type InsertDailyDigestParams struct {
+	ElderID         uuid.UUID   `json:"elder_id"`
+	DigestDate      pgtype.Date `json:"digest_date"`
+	SummaryText     string      `json:"summary_text"`
+	EmotionFlag     *string     `json:"emotion_flag"`
+	SessionCount    int32       `json:"session_count"`
+	EscalationCount int32       `json:"escalation_count"`
+	TotalTokens     int32       `json:"total_tokens"`
+	Model           *string     `json:"model"`
+}
+
+// 같은 날 요약이 이미 있으면 행이 없습니다(재시도해도 문자는 한 번).
+func (q *Queries) InsertDailyDigest(ctx context.Context, arg InsertDailyDigestParams) (DailyDigest, error) {
+	row := q.db.QueryRow(ctx, insertDailyDigest,
+		arg.ElderID,
+		arg.DigestDate,
+		arg.SummaryText,
+		arg.EmotionFlag,
+		arg.SessionCount,
+		arg.EscalationCount,
+		arg.TotalTokens,
+		arg.Model,
+	)
+	var i DailyDigest
+	err := row.Scan(
+		&i.ID,
+		&i.ElderID,
+		&i.DigestDate,
+		&i.SummaryText,
+		&i.EmotionFlag,
+		&i.SessionCount,
+		&i.EscalationCount,
+		&i.TotalTokens,
+		&i.Model,
+		&i.GeneratedAt,
+		&i.SentAt,
+	)
+	return i, err
+}
+
+const listEnabledCompanionSchedules = `-- name: ListEnabledCompanionSchedules :many
+SELECT elder_id, enabled, check_in_times, bedtime_start, bedtime_end, time_zone, daily_token_limit, created_at, updated_at FROM companion_schedule WHERE enabled
+`
+
+func (q *Queries) ListEnabledCompanionSchedules(ctx context.Context) ([]CompanionSchedule, error) {
+	rows, err := q.db.Query(ctx, listEnabledCompanionSchedules)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CompanionSchedule{}
+	for rows.Next() {
+		var i CompanionSchedule
+		if err := rows.Scan(
+			&i.ElderID,
+			&i.Enabled,
+			&i.CheckInTimes,
+			&i.BedtimeStart,
+			&i.BedtimeEnd,
+			&i.TimeZone,
+			&i.DailyTokenLimit,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markDailyDigestSent = `-- name: MarkDailyDigestSent :exec
+UPDATE daily_digest SET sent_at = now() WHERE id = $1 AND sent_at IS NULL
+`
+
+func (q *Queries) MarkDailyDigestSent(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, markDailyDigestSent, id)
+	return err
+}
+
 const upsertCompanionSchedule = `-- name: UpsertCompanionSchedule :one
 INSERT INTO companion_schedule (elder_id, enabled, check_in_times, bedtime_start, bedtime_end, time_zone, daily_token_limit)
 VALUES (

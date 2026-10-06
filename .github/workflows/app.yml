@@ -22,6 +22,6 @@ jobs:
       - run: flutter analyze
       - name: flutter test
         run: |
-          for pkg in apps/elder_tablet apps/caregiver packages/api_client packages/voice packages/ui; do
+          for pkg in apps/elder_tablet apps/caregiver apps/guardian packages/api_client packages/voice packages/ui; do
             (cd "$pkg" && flutter test)
           done

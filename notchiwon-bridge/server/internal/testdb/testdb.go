@@ -13,8 +13,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/migrate"
 )
@@ -147,4 +149,88 @@ func Phone(t testing.TB, pool *pgxpool.Pool, caregiverID uuid.UUID, fcmToken str
 		t.Fatalf("register phone: %v", err)
 	}
 	return d
+}
+
+// GuardianPhone registers a guardian phone for push alerts.
+func GuardianPhone(t testing.TB, pool *pgxpool.Pool, guardianID uuid.UUID, fcmToken string) db.Device {
+	t.Helper()
+	d, err := db.New(pool).RegisterGuardianPhone(context.Background(), db.RegisterGuardianPhoneParams{
+		GuardianID: &guardianID, FcmToken: &fcmToken,
+	})
+	if err != nil {
+		t.Fatalf("register guardian phone: %v", err)
+	}
+	return d
+}
+
+// CompanionTalk starts a companion session for the fixture's elder, records
+// the lines (one turn each) and ends it with reason when end is true.
+func CompanionTalk(t testing.TB, pool *pgxpool.Pool, f Fixture, end string, lines ...Said) (db.ConversationSession, []db.Utterance) {
+	t.Helper()
+	ctx := context.Background()
+	q := db.New(pool)
+	sess, err := q.CreateCompanionSession(ctx, db.CreateCompanionSessionParams{ElderID: f.ElderID, StartedBy: "ELDER"})
+	if err != nil {
+		t.Fatalf("create companion session: %v", err)
+	}
+	utts := make([]db.Utterance, len(lines))
+	for i, l := range lines {
+		speaker, chunk := "AI", int32(1)
+		if l.Elder {
+			speaker, chunk = "ELDER", 0
+		}
+		utts[i], err = q.CreateUtterance(ctx, db.CreateUtteranceParams{
+			SessionID: sess.ID, Seq: int32(i), ChunkIndex: chunk, Speaker: speaker, Text: l.Text,
+		})
+		if err != nil {
+			t.Fatalf("create utterance: %v", err)
+		}
+	}
+	if end != "" {
+		if sess, err = q.EndSession(ctx, db.EndSessionParams{ID: sess.ID, EndedReason: &end}); err != nil {
+			t.Fatalf("end session: %v", err)
+		}
+	}
+	return sess, utts
+}
+
+// CompanionSchedule stores an elder's companion settings. checkIns and the
+// bedtime are "HH:MM"; an empty bedtime means none.
+func CompanionSchedule(t testing.TB, pool *pgxpool.Pool, elderID uuid.UUID, tz string, bedStart, bedEnd string, checkIns ...string) db.CompanionSchedule {
+	t.Helper()
+	clock := func(s string) pgtype.Time {
+		at, err := time.Parse("15:04", s)
+		if err != nil {
+			t.Fatalf("time of day %q: %v", s, err)
+		}
+		return pgtype.Time{Microseconds: int64(at.Hour()*60+at.Minute()) * int64(time.Minute/time.Microsecond), Valid: true}
+	}
+	params := db.UpsertCompanionScheduleParams{
+		ElderID: elderID, Enabled: true, TimeZone: tz, CheckInTimes: []pgtype.Time{},
+	}
+	for _, c := range checkIns {
+		params.CheckInTimes = append(params.CheckInTimes, clock(c))
+	}
+	if bedStart != "" {
+		params.BedtimeStart, params.BedtimeEnd = clock(bedStart), clock(bedEnd)
+	}
+	row, err := db.New(pool).UpsertCompanionSchedule(context.Background(), params)
+	if err != nil {
+		t.Fatalf("save companion schedule: %v", err)
+	}
+	return row
+}
+
+// GuardianLogin gives the fixture's guardian a login and returns it.
+func GuardianLogin(t testing.TB, pool *pgxpool.Pool, guardianID uuid.UUID, loginID, password string) {
+	t.Helper()
+	hash, err := auth.HashPassword(password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.New(pool).SetGuardianLogin(context.Background(), db.SetGuardianLoginParams{
+		ID: guardianID, LoginID: &loginID, PasswordHash: &hash,
+	}); err != nil {
+		t.Fatalf("set guardian login: %v", err)
+	}
 }

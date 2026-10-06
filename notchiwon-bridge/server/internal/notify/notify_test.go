@@ -134,7 +134,8 @@ func TestEscalationWorkerPushesCaregiver(t *testing.T) {
 		t.Fatal(err)
 	}
 	var targets []Target
-	if err := json.Unmarshal(got.NotifiedTargets, &targets); err != nil || len(targets) != 1 || targets[0].DeviceID != live.ID {
+	if err := json.Unmarshal(got.NotifiedTargets, &targets); err != nil || len(targets) != 1 ||
+		targets[0].DeviceID == nil || *targets[0].DeviceID != live.ID {
 		t.Errorf("notified_targets = %s", got.NotifiedTargets)
 	}
 	phones, err := q.ListCaregiverPhones(context.Background(), &f.CaregiverID)

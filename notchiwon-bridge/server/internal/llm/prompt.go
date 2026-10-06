@@ -67,3 +67,9 @@ func Kickoff() string { return render("kickoff.tmpl", nil) }
 func Continuation(opener string) string {
 	return render("continue.tmpl", struct{ Opener string }{opener})
 }
+
+// HistoryBlock is the extra system block that stands in for the early part
+// of a long conversation.
+func HistoryBlock(summary string) string {
+	return render("history.tmpl", struct{ Summary string }{summary})
+}

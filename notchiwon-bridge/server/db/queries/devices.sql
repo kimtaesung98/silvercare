@@ -9,7 +9,10 @@ UPDATE device SET last_seen_at = now() WHERE id = $1;
 INSERT INTO device (kind, caregiver_id, fcm_token, label)
 VALUES ('CAREGIVER_PHONE', sqlc.arg(caregiver_id), sqlc.arg(fcm_token), sqlc.narg(label))
 ON CONFLICT (fcm_token) DO UPDATE
-SET caregiver_id = EXCLUDED.caregiver_id,
+SET kind = 'CAREGIVER_PHONE',
+    caregiver_id = EXCLUDED.caregiver_id,
+    guardian_id = NULL,
+    elder_id = NULL,
     label = EXCLUDED.label,
     revoked_at = NULL
 RETURNING *;

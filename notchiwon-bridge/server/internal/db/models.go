@@ -56,17 +56,19 @@ type CompanionSchedule struct {
 }
 
 type ConversationSession struct {
-	ID                uuid.UUID  `json:"id"`
-	VisitID           *uuid.UUID `json:"visit_id"`
-	ElderID           uuid.UUID  `json:"elder_id"`
-	Mode              string     `json:"mode"`
-	StartedBy         string     `json:"started_by"`
-	StartedAt         time.Time  `json:"started_at"`
-	EndedAt           *time.Time `json:"ended_at"`
-	TriggerEtaMinutes *int32     `json:"trigger_eta_minutes"`
-	OverallEmotionTag *string    `json:"overall_emotion_tag"`
-	EndedReason       *string    `json:"ended_reason"`
-	PromptVersion     *string    `json:"prompt_version"`
+	ID                    uuid.UUID  `json:"id"`
+	VisitID               *uuid.UUID `json:"visit_id"`
+	ElderID               uuid.UUID  `json:"elder_id"`
+	Mode                  string     `json:"mode"`
+	StartedBy             string     `json:"started_by"`
+	StartedAt             time.Time  `json:"started_at"`
+	EndedAt               *time.Time `json:"ended_at"`
+	TriggerEtaMinutes     *int32     `json:"trigger_eta_minutes"`
+	OverallEmotionTag     *string    `json:"overall_emotion_tag"`
+	EndedReason           *string    `json:"ended_reason"`
+	PromptVersion         *string    `json:"prompt_version"`
+	HistorySummary        *string    `json:"history_summary"`
+	HistorySummaryThrough *int32     `json:"history_summary_through"`
 }
 
 type DailyDigest struct {
@@ -132,6 +134,7 @@ type EscalationEvent struct {
 	AcknowledgedAt            *time.Time `json:"acknowledged_at"`
 	AcknowledgedByCaregiverID *uuid.UUID `json:"acknowledged_by_caregiver_id"`
 	ResolvedAt                *time.Time `json:"resolved_at"`
+	AcknowledgedByGuardianID  *uuid.UUID `json:"acknowledged_by_guardian_id"`
 }
 
 type Guardian struct {
@@ -141,6 +144,8 @@ type Guardian struct {
 	NotificationPreference []byte    `json:"notification_preference"`
 	CreatedAt              time.Time `json:"created_at"`
 	UpdatedAt              time.Time `json:"updated_at"`
+	LoginID                *string   `json:"login_id"`
+	PasswordHash           *string   `json:"password_hash"`
 }
 
 type KeywordTag struct {

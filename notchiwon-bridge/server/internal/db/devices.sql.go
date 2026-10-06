@@ -110,7 +110,10 @@ const registerCaregiverPhone = `-- name: RegisterCaregiverPhone :one
 INSERT INTO device (kind, caregiver_id, fcm_token, label)
 VALUES ('CAREGIVER_PHONE', $1, $2, $3)
 ON CONFLICT (fcm_token) DO UPDATE
-SET caregiver_id = EXCLUDED.caregiver_id,
+SET kind = 'CAREGIVER_PHONE',
+    caregiver_id = EXCLUDED.caregiver_id,
+    guardian_id = NULL,
+    elder_id = NULL,
     label = EXCLUDED.label,
     revoked_at = NULL
 RETURNING id, kind, elder_id, caregiver_id, guardian_id, label, token_hash, fcm_token, last_seen_at, revoked_at, created_at

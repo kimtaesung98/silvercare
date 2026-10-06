@@ -12,9 +12,12 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/apigen"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/companion"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/speech"
@@ -470,17 +473,155 @@ func (s *Server) GetOpenerClipAudio(ctx context.Context, req apigen.GetOpenerCli
 	return apigen.GetOpenerClipAudio200AudiompegResponse{Body: bytes.NewReader(mp3), ContentLength: int64(len(mp3))}, nil
 }
 
-// GetCompanionSchedule is stage 6.
-func (s *Server) GetCompanionSchedule(context.Context, apigen.GetCompanionScheduleRequestObject) (apigen.GetCompanionScheduleResponseObject, error) {
-	return nil, errNotImplemented
+// myElder reports whether the elder belongs to the caregiver's center. The
+// companion settings are the center's to change until guardians have an app.
+func (s *Server) myElder(ctx context.Context, elderID uuid.UUID) (db.Elder, bool, error) {
+	c, err := mustCaregiver(ctx)
+	if err != nil {
+		return db.Elder{}, false, err
+	}
+	elder, err := s.q.GetElder(ctx, elderID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return db.Elder{}, false, nil
+	}
+	if err != nil {
+		return db.Elder{}, false, fmt.Errorf("read elder: %w", err)
+	}
+	return elder, elder.CenterID == c.CenterID, nil
 }
 
-// PutCompanionSchedule is stage 6.
-func (s *Server) PutCompanionSchedule(context.Context, apigen.PutCompanionScheduleRequestObject) (apigen.PutCompanionScheduleResponseObject, error) {
-	return nil, errNotImplemented
+// GetCompanionSchedule implements GET /elders/{elderId}/companion-schedule.
+// An elder with no row yet reads as the default (companion mode on, no
+// check-in calls, no bedtime).
+func (s *Server) GetCompanionSchedule(ctx context.Context, req apigen.GetCompanionScheduleRequestObject) (apigen.GetCompanionScheduleResponseObject, error) {
+	if _, ok, err := s.myElder(ctx, req.ElderId); err != nil {
+		return nil, err
+	} else if !ok {
+		return apigen.GetCompanionSchedule404JSONResponse{NotFoundJSONResponse: apigen.NotFoundJSONResponse(errNotFound)}, nil
+	}
+	sched, err := s.schedule(ctx, req.ElderId)
+	if err != nil {
+		return nil, err
+	}
+	return apigen.GetCompanionSchedule200JSONResponse(sched), nil
 }
 
-// GetDailyDigest is stage 6.
-func (s *Server) GetDailyDigest(context.Context, apigen.GetDailyDigestRequestObject) (apigen.GetDailyDigestResponseObject, error) {
-	return nil, errNotImplemented
+// PutCompanionSchedule implements PUT /elders/{elderId}/companion-schedule.
+func (s *Server) PutCompanionSchedule(ctx context.Context, req apigen.PutCompanionScheduleRequestObject) (apigen.PutCompanionScheduleResponseObject, error) {
+	if _, ok, err := s.myElder(ctx, req.ElderId); err != nil {
+		return nil, err
+	} else if !ok {
+		return apigen.PutCompanionSchedule404JSONResponse{NotFoundJSONResponse: apigen.NotFoundJSONResponse(errNotFound)}, nil
+	}
+	if req.Body == nil {
+		return apigen.PutCompanionSchedule400JSONResponse{
+			BadRequestJSONResponse: apigen.BadRequestJSONResponse(invalid("설정이 필요합니다.")),
+		}, nil
+	}
+	saved, bad := s.saveSchedule(ctx, req.ElderId, *req.Body)
+	if bad != nil {
+		return apigen.PutCompanionSchedule400JSONResponse{BadRequestJSONResponse: apigen.BadRequestJSONResponse(*bad)}, nil
+	}
+	if saved == nil {
+		return nil, errors.New("save companion schedule: no row")
+	}
+	return apigen.PutCompanionSchedule200JSONResponse(*saved), nil
+}
+
+// saveSchedule validates and stores an elder's companion settings. It
+// returns the saved settings, or the ApiError to answer 400 with.
+func (s *Server) saveSchedule(ctx context.Context, elderID uuid.UUID, in apigen.CompanionSchedule) (*apigen.CompanionSchedule, *apigen.ApiError) {
+	bad := func(m string) *apigen.ApiError {
+		e := invalid(m)
+		return &e
+	}
+	params := db.UpsertCompanionScheduleParams{
+		ElderID: elderID, Enabled: in.Enabled, TimeZone: in.TimeZone,
+		CheckInTimes: []pgtype.Time{}, DailyTokenLimit: in.DailyTokenLimit,
+	}
+	if _, err := time.LoadLocation(in.TimeZone); err != nil {
+		return nil, bad("timeZone을 알 수 없습니다: " + in.TimeZone)
+	}
+	for _, t := range in.CheckInTimes {
+		c, err := companion.ParseClock(t)
+		if err != nil {
+			return nil, bad("checkInTimes는 HH:MM이어야 합니다: " + t)
+		}
+		params.CheckInTimes = append(params.CheckInTimes, c.PgTime())
+	}
+	switch {
+	case (in.BedtimeStart == nil) != (in.BedtimeEnd == nil):
+		return nil, bad("취침 시간은 시작과 끝을 함께 넣어 주세요.")
+	case in.BedtimeStart != nil:
+		start, err := companion.ParseClock(*in.BedtimeStart)
+		if err != nil {
+			return nil, bad("bedtimeStart는 HH:MM이어야 합니다.")
+		}
+		end, err := companion.ParseClock(*in.BedtimeEnd)
+		if err != nil {
+			return nil, bad("bedtimeEnd는 HH:MM이어야 합니다.")
+		}
+		if start == end {
+			return nil, bad("취침 시간의 시작과 끝이 같습니다.")
+		}
+		params.BedtimeStart, params.BedtimeEnd = start.PgTime(), end.PgTime()
+	}
+	if in.DailyTokenLimit != nil && *in.DailyTokenLimit < 1 {
+		return nil, bad("dailyTokenLimit은 1 이상이어야 합니다.")
+	}
+	row, err := s.q.UpsertCompanionSchedule(ctx, params)
+	if err != nil {
+		s.deps.Logger.ErrorContext(ctx, "save companion schedule failed", "elder_id", elderID, "err", err)
+		return nil, bad("설정을 저장하지 못했습니다.")
+	}
+	out := toSchedule(row)
+	return &out, nil
+}
+
+func toSchedule(r db.CompanionSchedule) apigen.CompanionSchedule {
+	out := apigen.CompanionSchedule{
+		Enabled: r.Enabled, CheckInTimes: []string{}, TimeZone: r.TimeZone,
+		DailyTokenLimit: r.DailyTokenLimit,
+	}
+	for _, t := range r.CheckInTimes {
+		if c, ok := companion.ClockOf(t); ok {
+			out.CheckInTimes = append(out.CheckInTimes, c.String())
+		}
+	}
+	if a, ok := companion.ClockOf(r.BedtimeStart); ok {
+		if b, ok := companion.ClockOf(r.BedtimeEnd); ok {
+			start, end := a.String(), b.String()
+			out.BedtimeStart, out.BedtimeEnd = &start, &end
+		}
+	}
+	return out
+}
+
+// GetDailyDigest implements GET /elders/{elderId}/daily-digests/{date}.
+func (s *Server) GetDailyDigest(ctx context.Context, req apigen.GetDailyDigestRequestObject) (apigen.GetDailyDigestResponseObject, error) {
+	notFound := apigen.GetDailyDigest404JSONResponse{NotFoundJSONResponse: apigen.NotFoundJSONResponse(errNotFound)}
+	if _, ok, err := s.myElder(ctx, req.ElderId); err != nil {
+		return nil, err
+	} else if !ok {
+		return notFound, nil
+	}
+	d, err := s.q.GetDailyDigest(ctx, db.GetDailyDigestParams{
+		ElderID: req.ElderId, DigestDate: pgtype.Date{Time: req.Date.Time, Valid: true},
+	})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return notFound, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read daily digest: %w", err)
+	}
+	return apigen.GetDailyDigest200JSONResponse(apigen.DailyDigest{
+		ElderId:         d.ElderID,
+		Date:            openapi_types.Date{Time: d.DigestDate.Time},
+		SummaryText:     d.SummaryText,
+		EmotionFlag:     d.EmotionFlag,
+		SessionCount:    d.SessionCount,
+		EscalationCount: d.EscalationCount,
+		GeneratedAt:     d.GeneratedAt,
+		SentAt:          d.SentAt,
+	}), nil
 }

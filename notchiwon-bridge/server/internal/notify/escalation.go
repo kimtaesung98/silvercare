@@ -24,17 +24,17 @@ var TriggerLabels = map[string]string{
 	"OTHER_ANOMALY":      "이상 징후",
 }
 
-// Target is one entry of escalation_event.notified_targets.
+// Target is one entry of escalation_event.notified_targets: a caregiver
+// phone that got the push, or a guardian phone number that got the text.
 type Target struct {
-	DeviceID uuid.UUID `json:"deviceId"`
-	SentAt   time.Time `json:"sentAt"`
+	DeviceID *uuid.UUID `json:"deviceId,omitempty"`
+	Phone    string     `json:"phone,omitempty"`
+	SentAt   time.Time  `json:"sentAt"`
 }
 
-// EscalationWorker pushes an escalation to the caregiver of the visit whose
-// pickup session raised it.
-//
-// Escalations in a companion session have no caregiver; the guardian alert
-// for those comes in stage 6, and until then they are only recorded.
+// EscalationWorker pushes an escalation to whoever must act on it: the
+// caregiver of the visit whose pickup session raised it, or, in a companion
+// session after daycare, the elder's guardian.
 type EscalationWorker struct {
 	river.WorkerDefaults[jobs.EscalationAlertArgs]
 	Queries *db.Queries
@@ -59,8 +59,7 @@ func (w *EscalationWorker) Work(ctx context.Context, job *river.Job[jobs.Escalat
 	case ev.AcknowledgedAt != nil:
 		return nil // seen already (a retry after someone opened the app)
 	case d.CaregiverID == nil:
-		log.WarnContext(ctx, "escalation in a companion session: guardian alerts are not built yet")
-		return nil
+		return w.alertGuardian(ctx, d, log)
 	}
 
 	phones, err := w.Queries.ListCaregiverPhones(ctx, d.CaregiverID)
@@ -72,6 +71,12 @@ func (w *EscalationWorker) Work(ctx context.Context, job *river.Job[jobs.Escalat
 		return nil
 	}
 
+	return w.push(ctx, d, phones, log)
+}
+
+// push sends the alert to every phone and records who got it. It returns an
+// error only when nobody did, so River retries.
+func (w *EscalationWorker) push(ctx context.Context, d db.GetEscalationDetailRow, phones []db.Device, log *slog.Logger) error {
 	msg := EscalationMessage(d)
 	var (
 		sent    []Target
@@ -81,7 +86,7 @@ func (w *EscalationWorker) Work(ctx context.Context, job *river.Job[jobs.Escalat
 		err := w.Sender.Send(ctx, *p.FcmToken, msg)
 		switch {
 		case err == nil:
-			sent = append(sent, Target{DeviceID: p.ID, SentAt: w.now()})
+			sent = append(sent, Target{DeviceID: &p.ID, SentAt: w.now()})
 		case errors.Is(err, ErrUnavailable):
 			log.WarnContext(ctx, "fcm not configured: escalation alert not pushed")
 			return nil
@@ -100,7 +105,9 @@ func (w *EscalationWorker) Work(ctx context.Context, job *river.Job[jobs.Escalat
 		if err != nil {
 			return err
 		}
-		if err := w.Queries.SetEscalationNotified(ctx, db.SetEscalationNotifiedParams{ID: id, NotifiedTargets: targets}); err != nil {
+		if err := w.Queries.SetEscalationNotified(ctx, db.SetEscalationNotifiedParams{
+			ID: d.EscalationEvent.ID, NotifiedTargets: targets,
+		}); err != nil {
 			// The push went out; only the record is missing. Retrying would
 			// push again, so log instead.
 			log.ErrorContext(ctx, "record notified targets failed", "err", err)
@@ -110,6 +117,24 @@ func (w *EscalationWorker) Work(ctx context.Context, job *river.Job[jobs.Escalat
 	}
 	// Nobody got it: retry (River backs off) unless every token was dead.
 	return lastErr
+}
+
+// alertGuardian pushes an escalation from a companion session to the
+// guardian's phones.
+func (w *EscalationWorker) alertGuardian(ctx context.Context, d db.GetEscalationDetailRow, log *slog.Logger) error {
+	elder, err := w.Queries.GetElder(ctx, d.ElderID)
+	if err != nil {
+		return fmt.Errorf("read elder: %w", err)
+	}
+	phones, err := w.Queries.ListGuardianPhones(ctx, &elder.GuardianID)
+	if err != nil {
+		return fmt.Errorf("list guardian phones: %w", err)
+	}
+	if len(phones) == 0 {
+		log.WarnContext(ctx, "guardian has no phone registered for alerts", "guardian_id", elder.GuardianID)
+		return nil
+	}
+	return w.push(ctx, d, phones, log)
 }
 
 func (w *EscalationWorker) now() time.Time {
