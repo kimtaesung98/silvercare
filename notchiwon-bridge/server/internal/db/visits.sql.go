@@ -92,12 +92,51 @@ func (q *Queries) GetVisit(ctx context.Context, id uuid.UUID) (Visit, error) {
 	return i, err
 }
 
+const getVisitDetail = `-- name: GetVisitDetail :one
+SELECT
+    visit.id, visit.elder_id, visit.caregiver_id, visit.scheduled_time, visit.eta_current, visit.status, visit.actual_arrival_time, visit.created_at, visit.updated_at,
+    elder.name AS elder_name,
+    conversation_session.id AS session_id
+FROM visit
+JOIN elder ON elder.id = visit.elder_id
+LEFT JOIN conversation_session ON conversation_session.visit_id = visit.id
+WHERE visit.id = $1
+`
+
+type GetVisitDetailRow struct {
+	Visit     Visit      `json:"visit"`
+	ElderName string     `json:"elder_name"`
+	SessionID *uuid.UUID `json:"session_id"`
+}
+
+// API 응답용: 어르신 이름과 픽업 대기 세션 ID를 함께 읽습니다.
+func (q *Queries) GetVisitDetail(ctx context.Context, id uuid.UUID) (GetVisitDetailRow, error) {
+	row := q.db.QueryRow(ctx, getVisitDetail, id)
+	var i GetVisitDetailRow
+	err := row.Scan(
+		&i.Visit.ID,
+		&i.Visit.ElderID,
+		&i.Visit.CaregiverID,
+		&i.Visit.ScheduledTime,
+		&i.Visit.EtaCurrent,
+		&i.Visit.Status,
+		&i.Visit.ActualArrivalTime,
+		&i.Visit.CreatedAt,
+		&i.Visit.UpdatedAt,
+		&i.ElderName,
+		&i.SessionID,
+	)
+	return i, err
+}
+
 const listCaregiverVisitsBetween = `-- name: ListCaregiverVisitsBetween :many
 SELECT
     visit.id, visit.elder_id, visit.caregiver_id, visit.scheduled_time, visit.eta_current, visit.status, visit.actual_arrival_time, visit.created_at, visit.updated_at,
-    elder.name AS elder_name
+    elder.name AS elder_name,
+    conversation_session.id AS session_id
 FROM visit
 JOIN elder ON elder.id = visit.elder_id
+LEFT JOIN conversation_session ON conversation_session.visit_id = visit.id
 WHERE visit.caregiver_id = $1
   AND visit.scheduled_time >= $2
   AND visit.scheduled_time < $3
@@ -111,8 +150,9 @@ type ListCaregiverVisitsBetweenParams struct {
 }
 
 type ListCaregiverVisitsBetweenRow struct {
-	Visit     Visit  `json:"visit"`
-	ElderName string `json:"elder_name"`
+	Visit     Visit      `json:"visit"`
+	ElderName string     `json:"elder_name"`
+	SessionID *uuid.UUID `json:"session_id"`
 }
 
 // 조무사 앱의 오늘 방문 목록. [from, to) 구간은 호출하는 쪽이 한국 시각 하루로 계산합니다.
@@ -136,6 +176,7 @@ func (q *Queries) ListCaregiverVisitsBetween(ctx context.Context, arg ListCaregi
 			&i.Visit.CreatedAt,
 			&i.Visit.UpdatedAt,
 			&i.ElderName,
+			&i.SessionID,
 		); err != nil {
 			return nil, err
 		}

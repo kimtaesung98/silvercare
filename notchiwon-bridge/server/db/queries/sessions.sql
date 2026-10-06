@@ -26,3 +26,13 @@ SET ended_at = now(),
 WHERE id = sqlc.arg(id)
   AND ended_at IS NULL
 RETURNING *;
+
+-- name: PreemptCompanionSession :one
+-- 픽업 대기 세션을 시작하기 전에 진행 중인 말동무 세션을 끝냅니다. 없으면 행이 없습니다.
+UPDATE conversation_session
+SET ended_at = now(),
+    ended_reason = 'PREEMPTED'
+WHERE elder_id = $1
+  AND mode = 'COMPANION'
+  AND ended_at IS NULL
+RETURNING *;

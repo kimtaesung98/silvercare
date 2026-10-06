@@ -44,7 +44,7 @@
 | `connection.ready` | 연결 직후 한 번 | `deviceId`, `elderId`, `activeSession`, `openerVersion` |
 | `session.started` | 세션 시작 (ETA 트리거, 말동무 버튼, 안부 일정) | `sessionId`, `mode`, `startedBy`, `caregiverEtaMinutes` |
 | `session.rejected` | `session.request`를 받아들이지 않음 | `reason`: `ALREADY_ACTIVE`, `COMPANION_DISABLED`, `BEDTIME`, `TOKEN_LIMIT` |
-| `session.ended` | 세션 종료 | `sessionId`, `reason` (DB `ended_reason`과 같은 값) |
+| `session.ended` | 세션 종료 | `sessionId`, `reason` (DB `ended_reason`과 같은 값. 픽업 대기 세션이 시작돼 말동무가 끊기면 `PREEMPTED`) |
 | `elder.transcript` | 어르신 발화의 STT 결과 | `seq`, `utteranceId`, `clientId`, `text` |
 | `ai.opener` | 0번 문장 선택 | `turnId`, `clipId`, `category` |
 | `ai.filler` | 1번 문장이 늦을 때 한 번 | `turnId`, `clipId` |
@@ -101,7 +101,7 @@
 
 - **픽업 대기**: 조무사 위치(`POST /visits/{id}/location`)로 ETA가 기준 이내가 되면 서버가 방문을 `SESSION_ACTIVE`로 한 번만 차지하고 세션을 만든 뒤 `session.started {mode: PICKUP_BRIDGE, startedBy: SYSTEM}`을 보냅니다. 조무사가 도착하면(`POST /visits/{id}/arrive`) `session.ended {reason: CAREGIVER_ARRIVED}`.
 - **말동무**: 태블릿이 `session.request {mode: COMPANION}`을 보내면 서버가 세션을 만들고 `session.started {mode: COMPANION, startedBy: ELDER}`, 안 되면 `session.rejected`. 보호자가 정한 안부 시각에는 서버가 먼저 `session.started {startedBy: SCHEDULE}`을 보냅니다. 무응답·취침 시간·토큰 한도·`session.end`로 끝납니다.
-- 어르신 한 명에게 진행 중 세션은 하나뿐입니다(DB 부분 유니크 인덱스). 픽업 대기 중 말동무 버튼은 `session.rejected {reason: ALREADY_ACTIVE}`입니다.
+- 어르신 한 명에게 진행 중 세션은 하나뿐입니다(DB 부분 유니크 인덱스). 픽업 대기 중 말동무 버튼은 `session.rejected {reason: ALREADY_ACTIVE}`이고, 말동무 중에 픽업 대기 세션이 시작되면 말동무를 `session.ended {reason: PREEMPTED}`로 끝낸 뒤 픽업 대기 세션을 시작합니다.
 
 ## 7. 오류
 

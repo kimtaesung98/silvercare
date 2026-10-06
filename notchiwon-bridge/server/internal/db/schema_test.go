@@ -2,11 +2,8 @@ package db_test
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
-	"net/url"
-	"os"
 	"sync"
 	"testing"
 	"time"
@@ -15,68 +12,34 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
-	"github.com/pressly/goose/v3"
+	"github.com/jackc/pgx/v5/stdlib"
 
-	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/db/migrations"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/migrate"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/testdb"
 )
 
-// newTestDB creates a throwaway database on the server named by
-// TEST_DATABASE_URL, applies the migrations and drops it when the test ends.
-// The test is skipped when TEST_DATABASE_URL is unset.
+// newTestDB returns a migrated throwaway database, after checking that every
+// migration's Down section undoes its Up (up → down to 0 → up).
 func newTestDB(t *testing.T) *pgxpool.Pool {
 	t.Helper()
-	adminURL := os.Getenv("TEST_DATABASE_URL")
-	if adminURL == "" {
-		t.Skip("TEST_DATABASE_URL not set")
-	}
 	ctx := context.Background()
-
-	admin, err := pgx.Connect(ctx, adminURL)
-	if err != nil {
-		t.Fatalf("connect admin: %v", err)
-	}
-	name := "nb_test_" + uuid.NewString()[:8]
-	if _, err := admin.Exec(ctx, "CREATE DATABASE "+name); err != nil {
-		t.Fatalf("create database: %v", err)
-	}
-	t.Cleanup(func() {
-		if _, err := admin.Exec(context.Background(), "DROP DATABASE "+name+" WITH (FORCE)"); err != nil {
-			t.Errorf("drop database: %v", err)
-		}
-		_ = admin.Close(context.Background())
-	})
-
-	u, err := url.Parse(adminURL)
-	if err != nil {
-		t.Fatalf("parse TEST_DATABASE_URL: %v", err)
-	}
-	u.Path = "/" + name
-	dsn := u.String()
-
-	sqlDB, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
+	pool := testdb.Pool(t, testdb.URL(t))
+	sqlDB := stdlib.OpenDBFromPool(pool)
 	defer sqlDB.Close()
-	goose.SetBaseFS(migrations.FS)
-	goose.SetLogger(goose.NopLogger())
-	if err := goose.SetDialect("postgres"); err != nil {
+	p, err := migrate.NewProvider(sqlDB)
+	if err != nil {
 		t.Fatal(err)
 	}
-	// up → down → up: the Down section must undo everything Up creates.
-	for _, step := range []func(*sql.DB, string, ...goose.OptionsFunc) error{goose.Up, goose.Reset, goose.Up} {
-		if err := step(sqlDB, "."); err != nil {
-			t.Fatalf("migrate: %v", err)
-		}
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up: %v", err)
 	}
-
-	pool, err := pgxpool.New(ctx, dsn)
-	if err != nil {
-		t.Fatalf("pool: %v", err)
+	if _, err := p.DownTo(ctx, 0); err != nil {
+		t.Fatalf("down: %v", err)
 	}
-	t.Cleanup(pool.Close)
+	if _, err := p.Up(ctx); err != nil {
+		t.Fatalf("up again: %v", err)
+	}
 	return pool
 }
 
@@ -87,21 +50,8 @@ type fixture struct {
 
 func seed(t *testing.T, pool *pgxpool.Pool) fixture {
 	t.Helper()
-	ctx := context.Background()
-	var f fixture
-	err := pool.QueryRow(ctx, `
-		WITH g AS (INSERT INTO guardian (name, phone) VALUES ('보호자', '010-0000-0000') RETURNING id),
-		     c AS (INSERT INTO daycare_center (name) VALUES ('햇살센터') RETURNING id),
-		     e AS (INSERT INTO elder (name, birth_date, dementia_stage, guardian_id, center_id)
-		           SELECT '김순자', '1940-03-01', 'MILD', g.id, c.id FROM g, c RETURNING id, center_id),
-		     cg AS (INSERT INTO caregiver (name, center_id) SELECT '이조무', e.center_id FROM e RETURNING id),
-		     v AS (INSERT INTO visit (elder_id, caregiver_id, scheduled_time)
-		           SELECT e.id, cg.id, now() + interval '30 minutes' FROM e, cg RETURNING id, elder_id)
-		SELECT elder_id, id FROM v`).Scan(&f.elderID, &f.visitID)
-	if err != nil {
-		t.Fatalf("seed: %v", err)
-	}
-	return f
+	f := testdb.Seed(t, pool, time.Now().Add(30*time.Minute))
+	return fixture{elderID: f.ElderID, visitID: f.VisitID}
 }
 
 func isUniqueViolation(err error) bool {

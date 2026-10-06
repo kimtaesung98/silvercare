@@ -11,6 +11,37 @@ import (
 	"github.com/google/uuid"
 )
 
+const createElderTablet = `-- name: CreateElderTablet :one
+INSERT INTO device (kind, elder_id, token_hash, label)
+VALUES ('ELDER_TABLET', $1, $2, $3)
+RETURNING id, kind, elder_id, caregiver_id, guardian_id, label, token_hash, fcm_token, last_seen_at, revoked_at, created_at
+`
+
+type CreateElderTabletParams struct {
+	ElderID   *uuid.UUID `json:"elder_id"`
+	TokenHash []byte     `json:"token_hash"`
+	Label     *string    `json:"label"`
+}
+
+func (q *Queries) CreateElderTablet(ctx context.Context, arg CreateElderTabletParams) (Device, error) {
+	row := q.db.QueryRow(ctx, createElderTablet, arg.ElderID, arg.TokenHash, arg.Label)
+	var i Device
+	err := row.Scan(
+		&i.ID,
+		&i.Kind,
+		&i.ElderID,
+		&i.CaregiverID,
+		&i.GuardianID,
+		&i.Label,
+		&i.TokenHash,
+		&i.FcmToken,
+		&i.LastSeenAt,
+		&i.RevokedAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
 const getActiveDeviceByTokenHash = `-- name: GetActiveDeviceByTokenHash :one
 SELECT id, kind, elder_id, caregiver_id, guardian_id, label, token_hash, fcm_token, last_seen_at, revoked_at, created_at FROM device WHERE token_hash = $1 AND revoked_at IS NULL
 `

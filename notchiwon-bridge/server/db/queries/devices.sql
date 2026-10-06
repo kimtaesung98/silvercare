@@ -13,3 +13,8 @@ SET caregiver_id = EXCLUDED.caregiver_id,
     label = EXCLUDED.label,
     revoked_at = NULL
 RETURNING *;
+
+-- name: CreateElderTablet :one
+INSERT INTO device (kind, elder_id, token_hash, label)
+VALUES ('ELDER_TABLET', sqlc.arg(elder_id), sqlc.arg(token_hash), sqlc.narg(label))
+RETURNING *;
