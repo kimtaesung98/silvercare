@@ -23,3 +23,11 @@ FROM utterance u
 JOIN conversation_session s ON s.id = u.session_id
 WHERE s.elder_id = sqlc.arg(elder_id)
   AND u.created_at >= sqlc.arg(since);
+
+-- name: SetUtteranceUsage :exec
+-- 한 턴의 Claude 모델·토큰 사용량은 스트리밍이 끝난 뒤에 알 수 있어 그 턴의 마지막 문장에 기록합니다.
+UPDATE utterance
+SET model = sqlc.arg(model),
+    input_tokens = sqlc.arg(input_tokens),
+    output_tokens = sqlc.arg(output_tokens)
+WHERE id = sqlc.arg(id);

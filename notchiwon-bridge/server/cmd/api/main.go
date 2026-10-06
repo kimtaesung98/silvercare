@@ -16,9 +16,13 @@ import (
 
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/config"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/eta"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/httpapi"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/llm"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/migrate"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/session"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/visit"
 )
 
@@ -65,20 +69,42 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	// The real ETA client (Kakao Mobility / TMAP) replaces eta.Schedule in stage 5,
-	// and the /ws/elder handler becomes the session notifier in stage 3.
-	visits := visit.NewService(pool, eta.Schedule{}, nil, visit.Config{
+	var claude llm.Client = llm.Unavailable{}
+	if cfg.AnthropicAPIKey != "" {
+		claude = llm.NewAnthropic(cfg.AnthropicAPIKey, cfg.ConversationModel)
+	} else {
+		logger.Warn("ANTHROPIC_API_KEY is empty: every turn ends with the fallback sentence")
+	}
+	q := db.New(pool)
+	openers := opener.NewLibrary(q)
+	engine := session.NewEngine(q, claude, openers, session.Config{
+		FillerAfter:          cfg.FillerAfter,
+		FirstSentenceTimeout: cfg.FirstSentenceTimeout,
+		TurnTimeout:          cfg.TurnTimeout,
+		MaxSentences:         session.DefaultConfig.MaxSentences,
+	}, logger)
+	hub, err := session.NewHub(q, engine, openers, llm.PromptVersion, logger)
+	if err != nil {
+		return err
+	}
+	logger.Info("conversation engine ready", "model", cfg.ConversationModel, "prompt_version", llm.PromptVersion)
+
+	// The real ETA client (Kakao Mobility / TMAP) replaces eta.Schedule in stage 5.
+	visits := visit.NewService(pool, eta.Schedule{}, hub, visit.Config{
 		TriggerEtaMinutes: cfg.SessionTriggerEtaMinutes,
 		Location:          loc,
+		PromptVersion:     llm.PromptVersion,
 	}, logger)
 
 	srv := &http.Server{
 		Addr: fmt.Sprintf(":%d", cfg.Port),
 		Handler: httpapi.NewRouter(httpapi.Deps{
-			Pool:   pool,
-			Visits: visits,
-			Tokens: auth.NewTokens(cfg.AuthSecret, cfg.CaregiverTokenTTL),
-			Logger: logger,
+			Pool:    pool,
+			Visits:  visits,
+			Tokens:  auth.NewTokens(cfg.AuthSecret, cfg.CaregiverTokenTTL),
+			Openers: openers,
+			ElderWS: hub,
+			Logger:  logger,
 		}),
 		ReadHeaderTimeout: 10 * time.Second,
 	}

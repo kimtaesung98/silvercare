@@ -27,6 +27,16 @@ type Config struct {
 
 	// TimeZone defines "today" for visit lists.
 	TimeZone string `env:"TIME_ZONE" envDefault:"Asia/Seoul"`
+
+	// AnthropicAPIKey is optional in development: without it every turn ends
+	// with the fallback sentence.
+	AnthropicAPIKey   string `env:"ANTHROPIC_API_KEY"`
+	ConversationModel string `env:"CLAUDE_CONVERSATION_MODEL" envDefault:"claude-sonnet-5-5"`
+
+	// Conversation timings (internal/session.Config).
+	FillerAfter          time.Duration `env:"CONVERSATION_FILLER_AFTER" envDefault:"2s"`
+	FirstSentenceTimeout time.Duration `env:"CONVERSATION_FIRST_SENTENCE_TIMEOUT" envDefault:"6s"`
+	TurnTimeout          time.Duration `env:"CONVERSATION_TURN_TIMEOUT" envDefault:"20s"`
 }
 
 // Load reads Config from the process environment and checks it.
@@ -40,6 +50,9 @@ func Load() (Config, error) {
 	}
 	if cfg.SessionTriggerEtaMinutes < 0 {
 		return Config{}, errors.New("SESSION_TRIGGER_ETA_MINUTES must not be negative")
+	}
+	if cfg.FillerAfter <= 0 || cfg.FirstSentenceTimeout <= 0 || cfg.TurnTimeout < cfg.FirstSentenceTimeout {
+		return Config{}, errors.New("conversation timings must be positive, with CONVERSATION_TURN_TIMEOUT >= CONVERSATION_FIRST_SENTENCE_TIMEOUT")
 	}
 	if _, err := time.LoadLocation(cfg.TimeZone); err != nil {
 		return Config{}, err

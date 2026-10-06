@@ -34,10 +34,12 @@ const (
 )
 
 // SessionNotifier hears about sessions this package starts or ends, after the
-// transaction commits. The /ws/elder handler (stage 3) implements it to tell the tablet.
+// transaction commits. The /ws/elder handler implements it to tell the tablet.
 type SessionNotifier interface {
 	SessionStarted(ctx context.Context, s db.ConversationSession, etaMinutes int)
 	SessionEnded(ctx context.Context, s db.ConversationSession)
+	// EtaUpdated reports a fresh ETA for the visit of an open pickup session.
+	EtaUpdated(ctx context.Context, s db.ConversationSession, etaMinutes int)
 }
 
 // Detail is a visit with the fields the caregiver app shows.
@@ -69,6 +71,8 @@ type Config struct {
 	TriggerEtaMinutes int
 	// Location defines "today".
 	Location *time.Location
+	// PromptVersion is recorded on the sessions this package starts.
+	PromptVersion string
 }
 
 // Service implements the visit use cases.
@@ -159,6 +163,7 @@ func (s *Service) RecordLocation(ctx context.Context, caregiverID, visitID uuid.
 		res       = LocationResult{EtaMinutes: minutes}
 		started   *db.ConversationSession
 		preempted *db.ConversationSession
+		active    *db.ConversationSession
 	)
 	err = pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
 		q := db.New(tx)
@@ -200,6 +205,9 @@ func (s *Service) RecordLocation(ctx context.Context, caregiverID, visitID uuid.
 				return fmt.Errorf("read session: %w", err)
 			}
 			res.SessionID = &sess.ID
+			if sess.EndedAt == nil {
+				active = &sess
+			}
 		}
 		return nil
 	})
@@ -214,6 +222,9 @@ func (s *Service) RecordLocation(ctx context.Context, caregiverID, visitID uuid.
 		s.logger.InfoContext(ctx, "pickup session started",
 			"visit_id", visitID, "session_id", started.ID, "eta_minutes", minutes)
 		s.notifier.SessionStarted(ctx, *started, minutes)
+	}
+	if active != nil {
+		s.notifier.EtaUpdated(ctx, *active, minutes)
 	}
 	return res, nil
 }
@@ -238,6 +249,7 @@ func (s *Service) startPickupSession(ctx context.Context, q *db.Queries, visitID
 	}
 	created, err := q.CreatePickupSession(ctx, db.CreatePickupSessionParams{
 		VisitID: &v.ID, ElderID: v.ElderID, TriggerEtaMinutes: &etaMinutes,
+		PromptVersion: nullable(s.cfg.PromptVersion),
 	})
 	if err != nil {
 		return nil, nil, fmt.Errorf("create session: %w", err)
@@ -291,7 +303,15 @@ func (s *Service) Arrive(ctx context.Context, caregiverID, visitID uuid.UUID) (D
 
 func ptr[T any](v T) *T { return &v }
 
+func nullable(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
 type nopNotifier struct{}
 
 func (nopNotifier) SessionStarted(context.Context, db.ConversationSession, int) {}
 func (nopNotifier) SessionEnded(context.Context, db.ConversationSession)        {}
+func (nopNotifier) EtaUpdated(context.Context, db.ConversationSession, int)     {}

@@ -27,7 +27,7 @@
 - [x] `server/` Go 모듈 생성 (`go mod init`, `cmd/api/main.go`, 헬스체크 `GET /healthz`)
 - [x] `app/` Flutter 저장소 생성 (`apps/elder_tablet`, `apps/caregiver`, `packages/*`)
 - [x] GitHub Actions: Go(gofmt, `go vet`, `go test`), Flutter(`dart format`, `flutter analyze`, `flutter test`) — 생성 코드 검사는 단계 1에서 `contracts` 작업으로 추가
-- [x] `docker-compose.yml`의 backend를 Go 서버 이미지로 교체 (기존 NestJS는 `legacy` 프로필로 유지)
+- [x] `docker-compose.yml`의 backend를 Go 서버 이미지로 교체 (기존 NestJS는 `legacy` 프로필로 유지, 단계 3에서 삭제)
 - [x] 기존 `apps/` placeholder(Flutter·React Native 예정 메모) 삭제, 내용은 `app/`과 architecture.md로 이동
 
 ### 단계 1: 계약 확정
@@ -45,13 +45,15 @@
 - [x] 실제 Postgres 통합 테스트 (`testcontainers-go` 대신 `TEST_DATABASE_URL`: CI의 Postgres 서비스에 테스트마다 임시 DB를 만들고 지움)
 
 ### 단계 3: 대화 엔진 (텍스트)
-- [ ] 규칙 필터와 위급 이벤트 (규칙에 `rule_id` 부여)
-- [ ] 0번 문장 분류기와 `opener_clip` 시드 데이터
-- [ ] Claude 스트리밍 호출, 문장 분할기, 대체 문장, 응답 시간 제한
-- [ ] `flag_concern` 도구 처리 (`source=LLM`)
-- [ ] 프롬프트 템플릿 파일과 버전 기록, 프롬프트 캐싱
-- [ ] `/ws/elder` 핸들러 (텍스트 모드), 개발용 CLI 클라이언트
-- [ ] PR #1에 있던 테스트 케이스를 Go 테스트로 옮김 ([specs/conversation-loop.md](./specs/conversation-loop.md) 4절)
+- [x] 규칙 필터와 위급 이벤트 (규칙에 `rule_id` 부여, `internal/escalation`)
+- [x] 0번 문장 분류기와 `opener_clip` 시드 데이터 (`internal/opener`, 마이그레이션 `00003`, `GET /tablet/opener-clips`)
+- [x] Claude 스트리밍 호출, 문장 분할기, 대체 문장, 응답 시간 제한 (`internal/session`, `internal/llm`)
+- [x] `flag_concern` 도구 처리 (`source=LLM`)
+- [x] 프롬프트 템플릿 파일과 버전 기록, 프롬프트 캐싱 (`internal/llm/prompts/`, 버전은 템플릿 해시)
+- [x] `/ws/elder` 핸들러 (텍스트 모드), 개발용 CLI 클라이언트 (`cmd/elder-cli`)
+- [x] PR #1에 있던 테스트 케이스를 Go 테스트로 옮김 ([specs/conversation-loop.md](./specs/conversation-loop.md) 4절)
+- [x] 기존 `backend/`(NestJS) 삭제: 대화·위급·방문 기능이 Go로 옮겨졌고 브리핑·키워드는 빈 껍데기였음 (단계 5에서 Go로 구현)
+- [ ] 주인 검토: 실제 Claude 키로 대화 품질 확인 (`ANTHROPIC_API_KEY`를 넣고 `cmd/elder-cli`)
 
 ### 단계 4: 태블릿 앱
 - [ ] WebSocket 연결·재연결, 세션 화면 3개(대기, 대화, 도착 임박)

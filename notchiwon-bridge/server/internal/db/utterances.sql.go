@@ -129,6 +129,32 @@ func (q *Queries) NextUtteranceSeq(ctx context.Context, sessionID uuid.UUID) (in
 	return next_seq, err
 }
 
+const setUtteranceUsage = `-- name: SetUtteranceUsage :exec
+UPDATE utterance
+SET model = $1,
+    input_tokens = $2,
+    output_tokens = $3
+WHERE id = $4
+`
+
+type SetUtteranceUsageParams struct {
+	Model        *string   `json:"model"`
+	InputTokens  *int32    `json:"input_tokens"`
+	OutputTokens *int32    `json:"output_tokens"`
+	ID           uuid.UUID `json:"id"`
+}
+
+// 한 턴의 Claude 모델·토큰 사용량은 스트리밍이 끝난 뒤에 알 수 있어 그 턴의 마지막 문장에 기록합니다.
+func (q *Queries) SetUtteranceUsage(ctx context.Context, arg SetUtteranceUsageParams) error {
+	_, err := q.db.Exec(ctx, setUtteranceUsage,
+		arg.Model,
+		arg.InputTokens,
+		arg.OutputTokens,
+		arg.ID,
+	)
+	return err
+}
+
 const sumElderTokensSince = `-- name: SumElderTokensSince :one
 SELECT COALESCE(SUM(COALESCE(u.input_tokens, 0) + COALESCE(u.output_tokens, 0)), 0)::bigint AS total_tokens
 FROM utterance u

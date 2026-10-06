@@ -1,7 +1,3 @@
-# Node (전환 기간 동안 남은 NestJS backend)
-node_modules/
-dist/
-
 # Go
 server/bin/
 server/.tools/

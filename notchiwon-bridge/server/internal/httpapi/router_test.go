@@ -19,6 +19,7 @@ import (
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/eta"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/testdb"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/visit"
 )
@@ -27,10 +28,11 @@ var discard = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func newHandler(pool *pgxpool.Pool) http.Handler {
 	return NewRouter(Deps{
-		Pool:   pool,
-		Visits: visit.NewService(pool, eta.Schedule{}, nil, visit.Config{TriggerEtaMinutes: 15, Location: time.UTC}, discard),
-		Tokens: auth.NewTokens(strings.Repeat("k", 32), time.Hour),
-		Logger: discard,
+		Pool:    pool,
+		Visits:  visit.NewService(pool, eta.Schedule{}, nil, visit.Config{TriggerEtaMinutes: 15, Location: time.UTC}, discard),
+		Tokens:  auth.NewTokens(strings.Repeat("k", 32), time.Hour),
+		Openers: opener.NewLibrary(db.New(pool)),
+		Logger:  discard,
 	})
 }
 
@@ -236,6 +238,52 @@ func TestTabletContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	decode[apigen.ApiError](t, tablet.do(http.MethodGet, "/tablet/me", nil), http.StatusUnauthorized)
+}
+
+func TestOpenerClips(t *testing.T) {
+	pool := testdb.New(t)
+	f := testdb.Seed(t, pool, time.Now().Add(time.Hour))
+	ctx := context.Background()
+	token := auth.NewDeviceToken()
+	if _, err := db.New(pool).CreateElderTablet(ctx, db.CreateElderTabletParams{
+		ElderID: &f.ElderID, TokenHash: auth.HashDeviceToken(token),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tablet := client{t: t, h: newHandler(pool), token: token}
+
+	got := decode[apigen.OpenerClipManifest](t, tablet.do(http.MethodGet, "/tablet/opener-clips", nil), http.StatusOK)
+	if got.Voice != opener.DefaultVoice || got.Version == "" || len(got.Clips) == 0 {
+		t.Fatalf("%+v", got)
+	}
+	categories := map[apigen.OpenerCategory]bool{}
+	for _, c := range got.Clips {
+		categories[c.Category] = true
+		if c.AudioUrl != "/tablet/opener-clips/"+c.Id.String()+"/audio" || c.DurationMs <= 0 || c.Text == "" {
+			t.Errorf("clip %+v", c)
+		}
+	}
+	if len(categories) != 7 {
+		t.Errorf("categories = %v", categories)
+	}
+
+	// An elder whose voice has no clips yet gets the default ones.
+	if _, err := pool.Exec(ctx, `UPDATE elder SET preferred_tts_voice = 'nara' WHERE id = $1`, f.ElderID); err != nil {
+		t.Fatal(err)
+	}
+	again := decode[apigen.OpenerClipManifest](t, tablet.do(http.MethodGet, "/tablet/opener-clips", nil), http.StatusOK)
+	if again.Voice != opener.DefaultVoice || again.Version != got.Version {
+		t.Errorf("fallback manifest = %s %s", again.Voice, again.Version)
+	}
+
+	// Retiring a clip changes the version.
+	if _, err := pool.Exec(ctx, `UPDATE opener_clip SET active = false WHERE id = $1`, got.Clips[0].Id); err != nil {
+		t.Fatal(err)
+	}
+	changed := decode[apigen.OpenerClipManifest](t, tablet.do(http.MethodGet, "/tablet/opener-clips", nil), http.StatusOK)
+	if changed.Version == got.Version || len(changed.Clips) != len(got.Clips)-1 {
+		t.Errorf("after retiring: %s, %d clips", changed.Version, len(changed.Clips))
+	}
 }
 
 func TestLaterStageEndpointsAnswer501(t *testing.T) {
