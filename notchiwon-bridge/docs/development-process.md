@@ -23,7 +23,7 @@
 ## 2. 단계별 세부 작업
 
 ### 단계 0: 기반 정리
-- [ ] 초안 PR #1(NestJS 대화 루프)을 닫고, 동작과 테스트 케이스를 단계 3 명세로 옮김
+- [x] 초안 PR #1(NestJS 대화 루프)을 닫고, 동작과 테스트 케이스를 단계 3 명세로 옮김 ([specs/conversation-loop.md](./specs/conversation-loop.md))
 - [x] `server/` Go 모듈 생성 (`go mod init`, `cmd/api/main.go`, 헬스체크 `GET /healthz`)
 - [x] `app/` Flutter 저장소 생성 (`apps/elder_tablet`, `apps/caregiver`, `packages/*`)
 - [x] GitHub Actions: Go(gofmt, `go vet`, `go test`), Flutter(`dart format`, `flutter analyze`, `flutter test`) — `sqlc diff`는 단계 1에서 추가
@@ -50,7 +50,7 @@
 - [ ] `flag_concern` 도구 처리 (`source=LLM`)
 - [ ] 프롬프트 템플릿 파일과 버전 기록, 프롬프트 캐싱
 - [ ] `/ws/elder` 핸들러 (텍스트 모드), 개발용 CLI 클라이언트
-- [ ] PR #1에 있던 테스트 케이스를 Go 테스트로 옮김
+- [ ] PR #1에 있던 테스트 케이스를 Go 테스트로 옮김 ([specs/conversation-loop.md](./specs/conversation-loop.md) 4절)
 
 ### 단계 4: 태블릿 앱
 - [ ] WebSocket 연결·재연결, 세션 화면 3개(대기, 대화, 도착 임박)
