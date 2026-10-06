@@ -23,6 +23,26 @@ type Message struct {
 	// Data reaches the app even when it is in the background; the app reads
 	// "type" and the id fields to open the right screen.
 	Data map[string]string
+	// Channel is the Android notification channel. Empty means
+	// AndroidChannel: an alert that should wake the phone.
+	Channel string
+}
+
+// channel returns the Android channel this message goes out on.
+func (m Message) channel() string {
+	if m.Channel == "" {
+		return AndroidChannel
+	}
+	return m.Channel
+}
+
+// priority is HIGH for an alert and NORMAL for news that can wait for the
+// phone to wake on its own.
+func (m Message) priority() string {
+	if m.channel() == AndroidChannel {
+		return "HIGH"
+	}
+	return "NORMAL"
 }
 
 // Sender delivers a Message to one FCM registration token.
@@ -48,9 +68,13 @@ func (Unavailable) Send(context.Context, string, Message) error { return ErrUnav
 // fcmScope is the OAuth scope for the FCM HTTP v1 API.
 const fcmScope = "https://www.googleapis.com/auth/firebase.messaging"
 
-// AndroidChannel is the notification channel the caregiver app creates for
-// escalation alerts (high importance, sound on).
-const AndroidChannel = "escalation"
+// Notification channels the apps create. AndroidChannel carries escalation
+// alerts (high importance, sound on); DigestChannel carries the guardian's
+// daily news, which should not sound like an alarm.
+const (
+	AndroidChannel = "escalation"
+	DigestChannel  = "digest"
+)
 
 // FCM is the Sender backed by the FCM HTTP v1 API.
 type FCM struct {
@@ -99,7 +123,7 @@ type fcmNotification struct {
 }
 
 type fcmAndroid struct {
-	// HIGH wakes the phone even in Doze.
+	// HIGH wakes the phone even in Doze; NORMAL waits.
 	Priority     string                 `json:"priority"`
 	Notification fcmAndroidNotification `json:"notification"`
 }
@@ -116,8 +140,8 @@ func (f *FCM) Send(ctx context.Context, token string, m Message) error {
 		Notification: fcmNotification{Title: m.Title, Body: m.Body},
 		Data:         m.Data,
 		Android: fcmAndroid{
-			Priority:     "HIGH",
-			Notification: fcmAndroidNotification{ChannelID: AndroidChannel, Sound: "default"},
+			Priority:     m.priority(),
+			Notification: fcmAndroidNotification{ChannelID: m.channel(), Sound: "default"},
 		},
 	}})
 	if err != nil {

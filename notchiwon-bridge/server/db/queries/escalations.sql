@@ -60,3 +60,14 @@ UPDATE escalation_event SET notified_targets = sqlc.arg(notified_targets) WHERE 
 
 -- name: ListSessionEscalations :many
 SELECT * FROM escalation_event WHERE session_id = $1 ORDER BY created_at;
+
+-- name: ListElderEscalationsBetween :many
+-- 하루 요약용: 그날 말동무 대화에서 감지한 위급.
+SELECT escalation_event.*
+FROM escalation_event
+JOIN conversation_session ON conversation_session.id = escalation_event.session_id
+WHERE conversation_session.elder_id = sqlc.arg(elder_id)
+  AND conversation_session.mode = 'COMPANION'
+  AND escalation_event.created_at >= sqlc.arg(from_time)
+  AND escalation_event.created_at < sqlc.arg(to_time)
+ORDER BY escalation_event.created_at;

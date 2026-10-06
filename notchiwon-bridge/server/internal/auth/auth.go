@@ -1,5 +1,5 @@
-// Package auth issues and checks credentials: caregiver access tokens
-// (temporary center-issued login) and elder tablet device tokens.
+// Package auth issues and checks credentials: caregiver and guardian access
+// tokens (temporary center-issued logins) and elder tablet device tokens.
 package auth
 
 import (
@@ -20,10 +20,15 @@ import (
 // ErrInvalidToken is returned for malformed, forged or expired tokens.
 var ErrInvalidToken = errors.New("invalid token")
 
-const caregiverTokenPrefix = "cg1"
+const (
+	caregiverTokenPrefix = "cg1"
+	guardianTokenPrefix  = "gd1"
+)
 
-// Tokens signs and verifies caregiver access tokens with HMAC-SHA256.
-// A token is "cg1.<caregiver id>.<expiry unix>.<signature>".
+// Tokens signs and verifies access tokens with HMAC-SHA256. A token is
+// "<prefix>.<account id>.<expiry unix>.<signature>", where the prefix says
+// whose token it is ("cg1" a caregiver's, "gd1" a guardian's), so a
+// caregiver token cannot be used on a guardian endpoint.
 type Tokens struct {
 	secret []byte
 	ttl    time.Duration
@@ -37,13 +42,31 @@ func NewTokens(secret string, ttl time.Duration) *Tokens {
 
 // IssueCaregiver returns an access token for the caregiver and its expiry.
 func (t *Tokens) IssueCaregiver(caregiverID uuid.UUID) (string, time.Time) {
+	return t.issue(caregiverTokenPrefix, caregiverID)
+}
+
+// IssueGuardian returns an access token for the guardian and its expiry.
+func (t *Tokens) IssueGuardian(guardianID uuid.UUID) (string, time.Time) {
+	return t.issue(guardianTokenPrefix, guardianID)
+}
+
+func (t *Tokens) issue(prefix string, id uuid.UUID) (string, time.Time) {
 	exp := t.now().Add(t.ttl).Truncate(time.Second)
-	payload := caregiverTokenPrefix + "." + caregiverID.String() + "." + strconv.FormatInt(exp.Unix(), 10)
+	payload := prefix + "." + id.String() + "." + strconv.FormatInt(exp.Unix(), 10)
 	return payload + "." + t.sign(payload), exp
 }
 
 // VerifyCaregiver returns the caregiver ID in a valid, unexpired token.
 func (t *Tokens) VerifyCaregiver(token string) (uuid.UUID, error) {
+	return t.verify(caregiverTokenPrefix, token)
+}
+
+// VerifyGuardian returns the guardian ID in a valid, unexpired token.
+func (t *Tokens) VerifyGuardian(token string) (uuid.UUID, error) {
+	return t.verify(guardianTokenPrefix, token)
+}
+
+func (t *Tokens) verify(prefix, token string) (uuid.UUID, error) {
 	i := strings.LastIndexByte(token, '.')
 	if i < 0 {
 		return uuid.Nil, ErrInvalidToken
@@ -53,7 +76,7 @@ func (t *Tokens) VerifyCaregiver(token string) (uuid.UUID, error) {
 		return uuid.Nil, ErrInvalidToken
 	}
 	parts := strings.Split(payload, ".")
-	if len(parts) != 3 || parts[0] != caregiverTokenPrefix {
+	if len(parts) != 3 || parts[0] != prefix {
 		return uuid.Nil, ErrInvalidToken
 	}
 	id, err := uuid.Parse(parts[1])
@@ -125,6 +148,11 @@ type Caregiver struct {
 	CenterID uuid.UUID
 }
 
+// Guardian is the authenticated guardian of a request.
+type Guardian struct {
+	ID uuid.UUID
+}
+
 // Tablet is the authenticated elder tablet of a request.
 type Tablet struct {
 	DeviceID uuid.UUID
@@ -135,6 +163,7 @@ type ctxKey int
 
 const (
 	caregiverKey ctxKey = iota
+	guardianKey
 	tabletKey
 )
 
@@ -147,6 +176,17 @@ func WithCaregiver(ctx context.Context, c Caregiver) context.Context {
 func CaregiverFrom(ctx context.Context) (Caregiver, bool) {
 	c, ok := ctx.Value(caregiverKey).(Caregiver)
 	return c, ok
+}
+
+// WithGuardian stores the authenticated guardian in ctx.
+func WithGuardian(ctx context.Context, g Guardian) context.Context {
+	return context.WithValue(ctx, guardianKey, g)
+}
+
+// GuardianFrom returns the guardian stored by WithGuardian.
+func GuardianFrom(ctx context.Context) (Guardian, bool) {
+	g, ok := ctx.Value(guardianKey).(Guardian)
+	return g, ok
 }
 
 // WithTablet stores the authenticated tablet in ctx.

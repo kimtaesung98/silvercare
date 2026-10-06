@@ -8,6 +8,7 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -33,7 +34,9 @@ type Deps struct {
 	TTS speech.Synthesizer
 	// ElderWS serves GET /ws/elder (internal/session.Hub).
 	ElderWS http.Handler
-	Logger  *slog.Logger
+	// Location is the time zone the companion settings default to.
+	Location *time.Location
+	Logger   *slog.Logger
 }
 
 // NewRouter returns the root HTTP handler.
@@ -46,6 +49,9 @@ func NewRouter(d Deps) http.Handler {
 		r.Handle("/ws/elder", d.ElderWS)
 	}
 
+	if d.Location == nil {
+		d.Location = time.UTC
+	}
 	s := &Server{deps: d, q: db.New(d.Pool)}
 	strict := apigen.NewStrictHandlerWithOptions(s,
 		[]apigen.StrictMiddlewareFunc{s.authenticate},
@@ -63,14 +69,7 @@ func NewRouter(d Deps) http.Handler {
 	})
 }
 
-// errNotImplemented marks endpoints whose stage has not come yet.
-var errNotImplemented = errors.New("not implemented yet")
-
 func (s *Server) handleError(w http.ResponseWriter, r *http.Request, err error) {
-	if errors.Is(err, errNotImplemented) {
-		writeError(w, http.StatusNotImplemented, "NOT_IMPLEMENTED", "이 기능은 아직 구현되지 않았습니다.")
-		return
-	}
 	s.deps.Logger.ErrorContext(r.Context(), "request failed",
 		"method", r.Method, "path", r.URL.Path, "request_id", middleware.GetReqID(r.Context()), "err", err)
 	writeError(w, http.StatusInternalServerError, "INTERNAL", "서버 오류가 발생했습니다.")
@@ -87,6 +86,12 @@ func (s *Server) authenticate(next strictnethttp.StrictHTTPHandlerFunc, _ string
 				return s.unauthorized(ctx, w, err)
 			}
 			ctx = auth.WithCaregiver(ctx, c)
+		case ctx.Value(apigen.GuardianAuthScopes) != nil:
+			g, err := s.guardianFromRequest(ctx, r)
+			if err != nil {
+				return s.unauthorized(ctx, w, err)
+			}
+			ctx = auth.WithGuardian(ctx, g)
 		case ctx.Value(apigen.DeviceAuthScopes) != nil:
 			t, err := s.tabletFromRequest(ctx, r)
 			if err != nil {
@@ -126,6 +131,25 @@ func (s *Server) caregiverFromRequest(ctx context.Context, r *http.Request) (aut
 		return auth.Caregiver{}, err
 	}
 	return auth.Caregiver{ID: c.ID, CenterID: c.CenterID}, nil
+}
+
+func (s *Server) guardianFromRequest(ctx context.Context, r *http.Request) (auth.Guardian, error) {
+	tok, ok := auth.BearerToken(r.Header.Get("Authorization"))
+	if !ok {
+		return auth.Guardian{}, errUnauthenticated
+	}
+	id, err := s.deps.Tokens.VerifyGuardian(tok)
+	if err != nil {
+		return auth.Guardian{}, errUnauthenticated
+	}
+	g, err := s.q.GetGuardian(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return auth.Guardian{}, errUnauthenticated
+	}
+	if err != nil {
+		return auth.Guardian{}, err
+	}
+	return auth.Guardian{ID: g.ID}, nil
 }
 
 func (s *Server) tabletFromRequest(ctx context.Context, r *http.Request) (auth.Tablet, error) {

@@ -20,6 +20,7 @@ import (
 const (
 	CaregiverAuthScopes = "caregiverAuth.Scopes"
 	DeviceAuthScopes    = "deviceAuth.Scopes"
+	GuardianAuthScopes  = "guardianAuth.Scopes"
 )
 
 // Defines values for EmotionTag.
@@ -144,6 +145,11 @@ type DailyDigest struct {
 	SummaryText     string             `json:"summaryText"`
 }
 
+// DailyDigestList defines model for DailyDigestList.
+type DailyDigestList struct {
+	Digests []DailyDigest `json:"digests"`
+}
+
 // ElderSummary defines model for ElderSummary.
 type ElderSummary struct {
 	Id   openapi_types.UUID `json:"id"`
@@ -192,6 +198,26 @@ type FcmTokenRegistration struct {
 
 	// Label 기기 이름 (예 "갤럭시 S25")
 	Label *string `json:"label,omitempty"`
+}
+
+// Guardian defines model for Guardian.
+type Guardian struct {
+	Id   openapi_types.UUID `json:"id"`
+	Name string             `json:"name"`
+}
+
+// GuardianContext defines model for GuardianContext.
+type GuardianContext struct {
+	Elders   []ElderSummary `json:"elders"`
+	Guardian Guardian       `json:"guardian"`
+}
+
+// GuardianLoginResponse defines model for GuardianLoginResponse.
+type GuardianLoginResponse struct {
+	AccessToken string         `json:"accessToken"`
+	Elders      []ElderSummary `json:"elders"`
+	ExpiresAt   time.Time      `json:"expiresAt"`
+	Guardian    Guardian       `json:"guardian"`
 }
 
 // Health defines model for Health.
@@ -313,14 +339,29 @@ type NotFound = ApiError
 // Unauthorized defines model for Unauthorized.
 type Unauthorized = ApiError
 
+// ListDailyDigestsParams defines parameters for ListDailyDigests.
+type ListDailyDigestsParams struct {
+	// Limit 최대 개수 (기본 14)
+	Limit *int32 `form:"limit,omitempty" json:"limit,omitempty"`
+}
+
 // LoginCaregiverJSONRequestBody defines body for LoginCaregiver for application/json ContentType.
 type LoginCaregiverJSONRequestBody = CaregiverLoginRequest
+
+// LoginGuardianJSONRequestBody defines body for LoginGuardian for application/json ContentType.
+type LoginGuardianJSONRequestBody = CaregiverLoginRequest
 
 // PutCaregiverFcmTokenJSONRequestBody defines body for PutCaregiverFcmToken for application/json ContentType.
 type PutCaregiverFcmTokenJSONRequestBody = FcmTokenRegistration
 
 // PutCompanionScheduleJSONRequestBody defines body for PutCompanionSchedule for application/json ContentType.
 type PutCompanionScheduleJSONRequestBody = CompanionSchedule
+
+// PutGuardianFcmTokenJSONRequestBody defines body for PutGuardianFcmToken for application/json ContentType.
+type PutGuardianFcmTokenJSONRequestBody = FcmTokenRegistration
+
+// PutGuardianCompanionScheduleJSONRequestBody defines body for PutGuardianCompanionSchedule for application/json ContentType.
+type PutGuardianCompanionScheduleJSONRequestBody = CompanionSchedule
 
 // PostVisitLocationJSONRequestBody defines body for PostVisitLocation for application/json ContentType.
 type PostVisitLocationJSONRequestBody = LocationUpdate
@@ -330,6 +371,9 @@ type ServerInterface interface {
 	// 조무사 임시 로그인
 	// (POST /auth/caregiver/login)
 	LoginCaregiver(w http.ResponseWriter, r *http.Request)
+	// 보호자 임시 로그인
+	// (POST /auth/guardian/login)
+	LoginGuardian(w http.ResponseWriter, r *http.Request)
 	// 조무사 휴대폰 FCM 토큰 등록·갱신
 	// (PUT /devices/me/fcm-token)
 	PutCaregiverFcmToken(w http.ResponseWriter, r *http.Request)
@@ -351,6 +395,30 @@ type ServerInterface interface {
 	// 위급 알림 확인 (여러 번 호출해도 처음 확인한 시각·사람 유지)
 	// (POST /escalations/{escalationId}/ack)
 	AckEscalation(w http.ResponseWriter, r *http.Request, escalationId EscalationId)
+	// 보호자 휴대폰 FCM 토큰 등록·갱신
+	// (PUT /guardian/devices/me/fcm-token)
+	PutGuardianFcmToken(w http.ResponseWriter, r *http.Request)
+	// 말동무 설정 (보호자용)
+	// (GET /guardian/elders/{elderId}/companion-schedule)
+	GetGuardianCompanionSchedule(w http.ResponseWriter, r *http.Request, elderId ElderId)
+	// 말동무 설정 저장 (보호자용)
+	// (PUT /guardian/elders/{elderId}/companion-schedule)
+	PutGuardianCompanionSchedule(w http.ResponseWriter, r *http.Request, elderId ElderId)
+	// 최근 하루 요약 목록
+	// (GET /guardian/elders/{elderId}/daily-digests)
+	ListDailyDigests(w http.ResponseWriter, r *http.Request, elderId ElderId, params ListDailyDigestsParams)
+	// 확인하지 않은 위급 (최근 24시간, 말동무 대화)
+	// (GET /guardian/escalations/open)
+	ListGuardianOpenEscalations(w http.ResponseWriter, r *http.Request)
+	// 위급 이벤트 (알림을 눌렀을 때)
+	// (GET /guardian/escalations/{escalationId})
+	GetGuardianEscalation(w http.ResponseWriter, r *http.Request, escalationId EscalationId)
+	// 위급 알림 확인 (여러 번 호출해도 처음 시각 유지)
+	// (POST /guardian/escalations/{escalationId}/ack)
+	AckGuardianEscalation(w http.ResponseWriter, r *http.Request, escalationId EscalationId)
+	// 보호자와 돌보는 어르신 목록
+	// (GET /guardian/me)
+	GetGuardianContext(w http.ResponseWriter, r *http.Request)
 
 	// (GET /healthz)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -393,6 +461,12 @@ func (_ Unimplemented) LoginCaregiver(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
+// 보호자 임시 로그인
+// (POST /auth/guardian/login)
+func (_ Unimplemented) LoginGuardian(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
 // 조무사 휴대폰 FCM 토큰 등록·갱신
 // (PUT /devices/me/fcm-token)
 func (_ Unimplemented) PutCaregiverFcmToken(w http.ResponseWriter, r *http.Request) {
@@ -432,6 +506,54 @@ func (_ Unimplemented) GetEscalation(w http.ResponseWriter, r *http.Request, esc
 // 위급 알림 확인 (여러 번 호출해도 처음 확인한 시각·사람 유지)
 // (POST /escalations/{escalationId}/ack)
 func (_ Unimplemented) AckEscalation(w http.ResponseWriter, r *http.Request, escalationId EscalationId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 보호자 휴대폰 FCM 토큰 등록·갱신
+// (PUT /guardian/devices/me/fcm-token)
+func (_ Unimplemented) PutGuardianFcmToken(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 말동무 설정 (보호자용)
+// (GET /guardian/elders/{elderId}/companion-schedule)
+func (_ Unimplemented) GetGuardianCompanionSchedule(w http.ResponseWriter, r *http.Request, elderId ElderId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 말동무 설정 저장 (보호자용)
+// (PUT /guardian/elders/{elderId}/companion-schedule)
+func (_ Unimplemented) PutGuardianCompanionSchedule(w http.ResponseWriter, r *http.Request, elderId ElderId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 최근 하루 요약 목록
+// (GET /guardian/elders/{elderId}/daily-digests)
+func (_ Unimplemented) ListDailyDigests(w http.ResponseWriter, r *http.Request, elderId ElderId, params ListDailyDigestsParams) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 확인하지 않은 위급 (최근 24시간, 말동무 대화)
+// (GET /guardian/escalations/open)
+func (_ Unimplemented) ListGuardianOpenEscalations(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 위급 이벤트 (알림을 눌렀을 때)
+// (GET /guardian/escalations/{escalationId})
+func (_ Unimplemented) GetGuardianEscalation(w http.ResponseWriter, r *http.Request, escalationId EscalationId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 위급 알림 확인 (여러 번 호출해도 처음 시각 유지)
+// (POST /guardian/escalations/{escalationId}/ack)
+func (_ Unimplemented) AckGuardianEscalation(w http.ResponseWriter, r *http.Request, escalationId EscalationId) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 보호자와 돌보는 어르신 목록
+// (GET /guardian/me)
+func (_ Unimplemented) GetGuardianContext(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -507,6 +629,20 @@ func (siw *ServerInterfaceWrapper) LoginCaregiver(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.LoginCaregiver(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// LoginGuardian operation middleware
+func (siw *ServerInterfaceWrapper) LoginGuardian(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.LoginGuardian(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -711,6 +847,232 @@ func (siw *ServerInterfaceWrapper) AckEscalation(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AckEscalation(w, r, escalationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutGuardianFcmToken operation middleware
+func (siw *ServerInterfaceWrapper) PutGuardianFcmToken(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, GuardianAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutGuardianFcmToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGuardianCompanionSchedule operation middleware
+func (siw *ServerInterfaceWrapper) GetGuardianCompanionSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "elderId" -------------
+	var elderId ElderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "elderId", chi.URLParam(r, "elderId"), &elderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "elderId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, GuardianAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGuardianCompanionSchedule(w, r, elderId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// PutGuardianCompanionSchedule operation middleware
+func (siw *ServerInterfaceWrapper) PutGuardianCompanionSchedule(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "elderId" -------------
+	var elderId ElderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "elderId", chi.URLParam(r, "elderId"), &elderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "elderId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, GuardianAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.PutGuardianCompanionSchedule(w, r, elderId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListDailyDigests operation middleware
+func (siw *ServerInterfaceWrapper) ListDailyDigests(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "elderId" -------------
+	var elderId ElderId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "elderId", chi.URLParam(r, "elderId"), &elderId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "elderId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, GuardianAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListDailyDigestsParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", r.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListDailyDigests(w, r, elderId, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListGuardianOpenEscalations operation middleware
+func (siw *ServerInterfaceWrapper) ListGuardianOpenEscalations(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, GuardianAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListGuardianOpenEscalations(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGuardianEscalation operation middleware
+func (siw *ServerInterfaceWrapper) GetGuardianEscalation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "escalationId" -------------
+	var escalationId EscalationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "escalationId", chi.URLParam(r, "escalationId"), &escalationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "escalationId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, GuardianAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGuardianEscalation(w, r, escalationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AckGuardianEscalation operation middleware
+func (siw *ServerInterfaceWrapper) AckGuardianEscalation(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "escalationId" -------------
+	var escalationId EscalationId
+
+	err = runtime.BindStyledParameterWithOptions("simple", "escalationId", chi.URLParam(r, "escalationId"), &escalationId, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "escalationId", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, GuardianAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AckGuardianEscalation(w, r, escalationId)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetGuardianContext operation middleware
+func (siw *ServerInterfaceWrapper) GetGuardianContext(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, GuardianAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetGuardianContext(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1097,6 +1459,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Post(options.BaseURL+"/auth/caregiver/login", wrapper.LoginCaregiver)
 	})
 	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/auth/guardian/login", wrapper.LoginGuardian)
+	})
+	r.Group(func(r chi.Router) {
 		r.Put(options.BaseURL+"/devices/me/fcm-token", wrapper.PutCaregiverFcmToken)
 	})
 	r.Group(func(r chi.Router) {
@@ -1116,6 +1481,30 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 	})
 	r.Group(func(r chi.Router) {
 		r.Post(options.BaseURL+"/escalations/{escalationId}/ack", wrapper.AckEscalation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/guardian/devices/me/fcm-token", wrapper.PutGuardianFcmToken)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/guardian/elders/{elderId}/companion-schedule", wrapper.GetGuardianCompanionSchedule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Put(options.BaseURL+"/guardian/elders/{elderId}/companion-schedule", wrapper.PutGuardianCompanionSchedule)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/guardian/elders/{elderId}/daily-digests", wrapper.ListDailyDigests)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/guardian/escalations/open", wrapper.ListGuardianOpenEscalations)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/guardian/escalations/{escalationId}", wrapper.GetGuardianEscalation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Post(options.BaseURL+"/guardian/escalations/{escalationId}/ack", wrapper.AckGuardianEscalation)
+	})
+	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/guardian/me", wrapper.GetGuardianContext)
 	})
 	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/healthz", wrapper.GetHealth)
@@ -1177,6 +1566,32 @@ func (response LoginCaregiver200JSONResponse) VisitLoginCaregiverResponse(w http
 type LoginCaregiver401JSONResponse struct{ UnauthorizedJSONResponse }
 
 func (response LoginCaregiver401JSONResponse) VisitLoginCaregiverResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LoginGuardianRequestObject struct {
+	Body *LoginGuardianJSONRequestBody
+}
+
+type LoginGuardianResponseObject interface {
+	VisitLoginGuardianResponse(w http.ResponseWriter) error
+}
+
+type LoginGuardian200JSONResponse GuardianLoginResponse
+
+func (response LoginGuardian200JSONResponse) VisitLoginGuardianResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type LoginGuardian401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response LoginGuardian401JSONResponse) VisitLoginGuardianResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(401)
 
@@ -1424,6 +1839,276 @@ type AckEscalation404JSONResponse struct{ NotFoundJSONResponse }
 func (response AckEscalation404JSONResponse) VisitAckEscalationResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PutGuardianFcmTokenRequestObject struct {
+	Body *PutGuardianFcmTokenJSONRequestBody
+}
+
+type PutGuardianFcmTokenResponseObject interface {
+	VisitPutGuardianFcmTokenResponse(w http.ResponseWriter) error
+}
+
+type PutGuardianFcmToken204Response struct {
+}
+
+func (response PutGuardianFcmToken204Response) VisitPutGuardianFcmTokenResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type PutGuardianFcmToken400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response PutGuardianFcmToken400JSONResponse) VisitPutGuardianFcmTokenResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PutGuardianFcmToken401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutGuardianFcmToken401JSONResponse) VisitPutGuardianFcmTokenResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetGuardianCompanionScheduleRequestObject struct {
+	ElderId ElderId `json:"elderId"`
+}
+
+type GetGuardianCompanionScheduleResponseObject interface {
+	VisitGetGuardianCompanionScheduleResponse(w http.ResponseWriter) error
+}
+
+type GetGuardianCompanionSchedule200JSONResponse CompanionSchedule
+
+func (response GetGuardianCompanionSchedule200JSONResponse) VisitGetGuardianCompanionScheduleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetGuardianCompanionSchedule401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetGuardianCompanionSchedule401JSONResponse) VisitGetGuardianCompanionScheduleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetGuardianCompanionSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetGuardianCompanionSchedule404JSONResponse) VisitGetGuardianCompanionScheduleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PutGuardianCompanionScheduleRequestObject struct {
+	ElderId ElderId `json:"elderId"`
+	Body    *PutGuardianCompanionScheduleJSONRequestBody
+}
+
+type PutGuardianCompanionScheduleResponseObject interface {
+	VisitPutGuardianCompanionScheduleResponse(w http.ResponseWriter) error
+}
+
+type PutGuardianCompanionSchedule200JSONResponse CompanionSchedule
+
+func (response PutGuardianCompanionSchedule200JSONResponse) VisitPutGuardianCompanionScheduleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PutGuardianCompanionSchedule400JSONResponse struct{ BadRequestJSONResponse }
+
+func (response PutGuardianCompanionSchedule400JSONResponse) VisitPutGuardianCompanionScheduleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PutGuardianCompanionSchedule401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response PutGuardianCompanionSchedule401JSONResponse) VisitPutGuardianCompanionScheduleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type PutGuardianCompanionSchedule404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response PutGuardianCompanionSchedule404JSONResponse) VisitPutGuardianCompanionScheduleResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListDailyDigestsRequestObject struct {
+	ElderId ElderId `json:"elderId"`
+	Params  ListDailyDigestsParams
+}
+
+type ListDailyDigestsResponseObject interface {
+	VisitListDailyDigestsResponse(w http.ResponseWriter) error
+}
+
+type ListDailyDigests200JSONResponse DailyDigestList
+
+func (response ListDailyDigests200JSONResponse) VisitListDailyDigestsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListDailyDigests401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListDailyDigests401JSONResponse) VisitListDailyDigestsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListDailyDigests404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response ListDailyDigests404JSONResponse) VisitListDailyDigestsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListGuardianOpenEscalationsRequestObject struct {
+}
+
+type ListGuardianOpenEscalationsResponseObject interface {
+	VisitListGuardianOpenEscalationsResponse(w http.ResponseWriter) error
+}
+
+type ListGuardianOpenEscalations200JSONResponse EscalationList
+
+func (response ListGuardianOpenEscalations200JSONResponse) VisitListGuardianOpenEscalationsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListGuardianOpenEscalations401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListGuardianOpenEscalations401JSONResponse) VisitListGuardianOpenEscalationsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetGuardianEscalationRequestObject struct {
+	EscalationId EscalationId `json:"escalationId"`
+}
+
+type GetGuardianEscalationResponseObject interface {
+	VisitGetGuardianEscalationResponse(w http.ResponseWriter) error
+}
+
+type GetGuardianEscalation200JSONResponse Escalation
+
+func (response GetGuardianEscalation200JSONResponse) VisitGetGuardianEscalationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetGuardianEscalation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetGuardianEscalation401JSONResponse) VisitGetGuardianEscalationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetGuardianEscalation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response GetGuardianEscalation404JSONResponse) VisitGetGuardianEscalationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AckGuardianEscalationRequestObject struct {
+	EscalationId EscalationId `json:"escalationId"`
+}
+
+type AckGuardianEscalationResponseObject interface {
+	VisitAckGuardianEscalationResponse(w http.ResponseWriter) error
+}
+
+type AckGuardianEscalation200JSONResponse Escalation
+
+func (response AckGuardianEscalation200JSONResponse) VisitAckGuardianEscalationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AckGuardianEscalation401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response AckGuardianEscalation401JSONResponse) VisitAckGuardianEscalationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AckGuardianEscalation404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AckGuardianEscalation404JSONResponse) VisitAckGuardianEscalationResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetGuardianContextRequestObject struct {
+}
+
+type GetGuardianContextResponseObject interface {
+	VisitGetGuardianContextResponse(w http.ResponseWriter) error
+}
+
+type GetGuardianContext200JSONResponse GuardianContext
+
+func (response GetGuardianContext200JSONResponse) VisitGetGuardianContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type GetGuardianContext401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response GetGuardianContext401JSONResponse) VisitGetGuardianContextResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1772,6 +2457,9 @@ type StrictServerInterface interface {
 	// 조무사 임시 로그인
 	// (POST /auth/caregiver/login)
 	LoginCaregiver(ctx context.Context, request LoginCaregiverRequestObject) (LoginCaregiverResponseObject, error)
+	// 보호자 임시 로그인
+	// (POST /auth/guardian/login)
+	LoginGuardian(ctx context.Context, request LoginGuardianRequestObject) (LoginGuardianResponseObject, error)
 	// 조무사 휴대폰 FCM 토큰 등록·갱신
 	// (PUT /devices/me/fcm-token)
 	PutCaregiverFcmToken(ctx context.Context, request PutCaregiverFcmTokenRequestObject) (PutCaregiverFcmTokenResponseObject, error)
@@ -1793,6 +2481,30 @@ type StrictServerInterface interface {
 	// 위급 알림 확인 (여러 번 호출해도 처음 확인한 시각·사람 유지)
 	// (POST /escalations/{escalationId}/ack)
 	AckEscalation(ctx context.Context, request AckEscalationRequestObject) (AckEscalationResponseObject, error)
+	// 보호자 휴대폰 FCM 토큰 등록·갱신
+	// (PUT /guardian/devices/me/fcm-token)
+	PutGuardianFcmToken(ctx context.Context, request PutGuardianFcmTokenRequestObject) (PutGuardianFcmTokenResponseObject, error)
+	// 말동무 설정 (보호자용)
+	// (GET /guardian/elders/{elderId}/companion-schedule)
+	GetGuardianCompanionSchedule(ctx context.Context, request GetGuardianCompanionScheduleRequestObject) (GetGuardianCompanionScheduleResponseObject, error)
+	// 말동무 설정 저장 (보호자용)
+	// (PUT /guardian/elders/{elderId}/companion-schedule)
+	PutGuardianCompanionSchedule(ctx context.Context, request PutGuardianCompanionScheduleRequestObject) (PutGuardianCompanionScheduleResponseObject, error)
+	// 최근 하루 요약 목록
+	// (GET /guardian/elders/{elderId}/daily-digests)
+	ListDailyDigests(ctx context.Context, request ListDailyDigestsRequestObject) (ListDailyDigestsResponseObject, error)
+	// 확인하지 않은 위급 (최근 24시간, 말동무 대화)
+	// (GET /guardian/escalations/open)
+	ListGuardianOpenEscalations(ctx context.Context, request ListGuardianOpenEscalationsRequestObject) (ListGuardianOpenEscalationsResponseObject, error)
+	// 위급 이벤트 (알림을 눌렀을 때)
+	// (GET /guardian/escalations/{escalationId})
+	GetGuardianEscalation(ctx context.Context, request GetGuardianEscalationRequestObject) (GetGuardianEscalationResponseObject, error)
+	// 위급 알림 확인 (여러 번 호출해도 처음 시각 유지)
+	// (POST /guardian/escalations/{escalationId}/ack)
+	AckGuardianEscalation(ctx context.Context, request AckGuardianEscalationRequestObject) (AckGuardianEscalationResponseObject, error)
+	// 보호자와 돌보는 어르신 목록
+	// (GET /guardian/me)
+	GetGuardianContext(ctx context.Context, request GetGuardianContextRequestObject) (GetGuardianContextResponseObject, error)
 
 	// (GET /healthz)
 	GetHealth(ctx context.Context, request GetHealthRequestObject) (GetHealthResponseObject, error)
@@ -1878,6 +2590,37 @@ func (sh *strictHandler) LoginCaregiver(w http.ResponseWriter, r *http.Request) 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(LoginCaregiverResponseObject); ok {
 		if err := validResponse.VisitLoginCaregiverResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// LoginGuardian operation middleware
+func (sh *strictHandler) LoginGuardian(w http.ResponseWriter, r *http.Request) {
+	var request LoginGuardianRequestObject
+
+	var body LoginGuardianJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.LoginGuardian(ctx, request.(LoginGuardianRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "LoginGuardian")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(LoginGuardianResponseObject); ok {
+		if err := validResponse.VisitLoginGuardianResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
@@ -2071,6 +2814,223 @@ func (sh *strictHandler) AckEscalation(w http.ResponseWriter, r *http.Request, e
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AckEscalationResponseObject); ok {
 		if err := validResponse.VisitAckEscalationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutGuardianFcmToken operation middleware
+func (sh *strictHandler) PutGuardianFcmToken(w http.ResponseWriter, r *http.Request) {
+	var request PutGuardianFcmTokenRequestObject
+
+	var body PutGuardianFcmTokenJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PutGuardianFcmToken(ctx, request.(PutGuardianFcmTokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutGuardianFcmToken")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PutGuardianFcmTokenResponseObject); ok {
+		if err := validResponse.VisitPutGuardianFcmTokenResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGuardianCompanionSchedule operation middleware
+func (sh *strictHandler) GetGuardianCompanionSchedule(w http.ResponseWriter, r *http.Request, elderId ElderId) {
+	var request GetGuardianCompanionScheduleRequestObject
+
+	request.ElderId = elderId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGuardianCompanionSchedule(ctx, request.(GetGuardianCompanionScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGuardianCompanionSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGuardianCompanionScheduleResponseObject); ok {
+		if err := validResponse.VisitGetGuardianCompanionScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// PutGuardianCompanionSchedule operation middleware
+func (sh *strictHandler) PutGuardianCompanionSchedule(w http.ResponseWriter, r *http.Request, elderId ElderId) {
+	var request PutGuardianCompanionScheduleRequestObject
+
+	request.ElderId = elderId
+
+	var body PutGuardianCompanionScheduleJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.PutGuardianCompanionSchedule(ctx, request.(PutGuardianCompanionScheduleRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "PutGuardianCompanionSchedule")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PutGuardianCompanionScheduleResponseObject); ok {
+		if err := validResponse.VisitPutGuardianCompanionScheduleResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListDailyDigests operation middleware
+func (sh *strictHandler) ListDailyDigests(w http.ResponseWriter, r *http.Request, elderId ElderId, params ListDailyDigestsParams) {
+	var request ListDailyDigestsRequestObject
+
+	request.ElderId = elderId
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListDailyDigests(ctx, request.(ListDailyDigestsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListDailyDigests")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListDailyDigestsResponseObject); ok {
+		if err := validResponse.VisitListDailyDigestsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListGuardianOpenEscalations operation middleware
+func (sh *strictHandler) ListGuardianOpenEscalations(w http.ResponseWriter, r *http.Request) {
+	var request ListGuardianOpenEscalationsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListGuardianOpenEscalations(ctx, request.(ListGuardianOpenEscalationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListGuardianOpenEscalations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListGuardianOpenEscalationsResponseObject); ok {
+		if err := validResponse.VisitListGuardianOpenEscalationsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGuardianEscalation operation middleware
+func (sh *strictHandler) GetGuardianEscalation(w http.ResponseWriter, r *http.Request, escalationId EscalationId) {
+	var request GetGuardianEscalationRequestObject
+
+	request.EscalationId = escalationId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGuardianEscalation(ctx, request.(GetGuardianEscalationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGuardianEscalation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGuardianEscalationResponseObject); ok {
+		if err := validResponse.VisitGetGuardianEscalationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AckGuardianEscalation operation middleware
+func (sh *strictHandler) AckGuardianEscalation(w http.ResponseWriter, r *http.Request, escalationId EscalationId) {
+	var request AckGuardianEscalationRequestObject
+
+	request.EscalationId = escalationId
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AckGuardianEscalation(ctx, request.(AckGuardianEscalationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AckGuardianEscalation")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AckGuardianEscalationResponseObject); ok {
+		if err := validResponse.VisitAckGuardianEscalationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetGuardianContext operation middleware
+func (sh *strictHandler) GetGuardianContext(w http.ResponseWriter, r *http.Request) {
+	var request GetGuardianContextRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetGuardianContext(ctx, request.(GetGuardianContextRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetGuardianContext")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetGuardianContextResponseObject); ok {
+		if err := validResponse.VisitGetGuardianContextResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

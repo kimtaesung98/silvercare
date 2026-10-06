@@ -1,0 +1,23 @@
+어르신: {{.ElderName}}
+날짜: {{.Date}}
+말동무 대화 {{.SessionCount}}회
+{{- if .Escalations}}
+위급 감지 기록:
+{{- range .Escalations}}
+- {{.}}
+{{- end}}
+{{- end}}
+{{- if .Summaries}}
+
+대화별 기록:
+{{- range .Summaries}}
+- {{.}}
+{{- end}}
+{{- end}}
+{{- if .Lines}}
+
+대화:
+{{- range .Lines}}
+{{.}}
+{{- end}}
+{{- end}}

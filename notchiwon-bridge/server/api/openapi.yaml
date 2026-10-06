@@ -3,7 +3,7 @@ info:
   title: 노치원 픽업 브릿지 API
   version: 0.1.0
   description: |
-    조무사 앱과 어르신 태블릿 앱이 쓰는 REST 계약입니다.
+    조무사 앱, 어르신 태블릿 앱, 보호자 앱이 쓰는 REST 계약입니다.
     실시간 대화(태블릿 ↔ 서버)는 WebSocket `/ws/elder`로 주고받으며 [ws-events.md](./ws-events.md)에 정의합니다.
 
     - Go 서버 코드는 `oapi-codegen`, Dart 클라이언트는 `openapi-generator`로 생성합니다(`make generate`).
@@ -15,7 +15,7 @@ servers:
 tags:
   - name: system
   - name: auth
-    description: 조무사 로그인. 로그인 방식(전화번호 인증 vs 센터 발급 계정)은 아직 정하지 않았고, 아래는 단계 2의 임시 로그인입니다.
+    description: 조무사·보호자 로그인. 로그인 방식(전화번호 인증 vs 센터 발급 계정)은 아직 정하지 않았고, 아래는 센터 발급 임시 로그인입니다.
   - name: visits
     description: 조무사 앱 방문 목록과 위치 전송
   - name: briefings
@@ -25,6 +25,8 @@ tags:
     description: 어르신 태블릿 앱 (기기 토큰 인증)
   - name: companion
     description: 하원 후 말동무 모드 설정과 하루 요약
+  - name: guardian
+    description: 보호자 앱 (보호자 토큰 인증). 보호자가 돌보는 어르신만 보입니다.
 security:
   - caregiverAuth: []
 
@@ -340,6 +342,203 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /auth/guardian/login:
+    post:
+      tags: [auth]
+      operationId: loginGuardian
+      summary: 보호자 임시 로그인
+      description: 센터가 발급한 아이디·비밀번호로 로그인합니다. 로그인 방식이 정해지면 바뀔 수 있습니다.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaregiverLoginRequest"
+      responses:
+        "200":
+          description: 로그인 성공
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardianLoginResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /guardian/me:
+    get:
+      tags: [guardian]
+      operationId: getGuardianContext
+      summary: 보호자와 돌보는 어르신 목록
+      security:
+        - guardianAuth: []
+      responses:
+        "200":
+          description: 보호자 정보
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/GuardianContext"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /guardian/devices/me/fcm-token:
+    put:
+      tags: [guardian]
+      operationId: putGuardianFcmToken
+      summary: 보호자 휴대폰 FCM 토큰 등록·갱신
+      security:
+        - guardianAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FcmTokenRegistration"
+      responses:
+        "204":
+          description: 등록됨
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /guardian/elders/{elderId}/companion-schedule:
+    parameters:
+      - $ref: "#/components/parameters/ElderId"
+    get:
+      tags: [guardian]
+      operationId: getGuardianCompanionSchedule
+      summary: 말동무 설정 (보호자용)
+      security:
+        - guardianAuth: []
+      responses:
+        "200":
+          description: 말동무 설정
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanionSchedule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [guardian]
+      operationId: putGuardianCompanionSchedule
+      summary: 말동무 설정 저장 (보호자용)
+      security:
+        - guardianAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanionSchedule"
+      responses:
+        "200":
+          description: 저장된 설정
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanionSchedule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /guardian/elders/{elderId}/daily-digests:
+    parameters:
+      - $ref: "#/components/parameters/ElderId"
+    get:
+      tags: [guardian]
+      operationId: listDailyDigests
+      summary: 최근 하루 요약 목록
+      security:
+        - guardianAuth: []
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          description: 최대 개수 (기본 14)
+          schema:
+            type: integer
+            format: int32
+            minimum: 1
+            maximum: 60
+      responses:
+        "200":
+          description: 하루 요약 목록 (최신순)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyDigestList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /guardian/escalations/open:
+    get:
+      tags: [guardian]
+      operationId: listGuardianOpenEscalations
+      summary: 확인하지 않은 위급 (최근 24시간, 말동무 대화)
+      security:
+        - guardianAuth: []
+      responses:
+        "200":
+          description: 위급 목록 (최신순)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EscalationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /guardian/escalations/{escalationId}:
+    parameters:
+      - $ref: "#/components/parameters/EscalationId"
+    get:
+      tags: [guardian]
+      operationId: getGuardianEscalation
+      summary: 위급 이벤트 (알림을 눌렀을 때)
+      security:
+        - guardianAuth: []
+      responses:
+        "200":
+          description: 위급 이벤트
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Escalation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /guardian/escalations/{escalationId}/ack:
+    parameters:
+      - $ref: "#/components/parameters/EscalationId"
+    post:
+      tags: [guardian]
+      operationId: ackGuardianEscalation
+      summary: 위급 알림 확인 (여러 번 호출해도 처음 시각 유지)
+      security:
+        - guardianAuth: []
+      responses:
+        "200":
+          description: 확인된 위급 이벤트
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Escalation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
   /elders/{elderId}/companion-schedule:
     parameters:
       - $ref: "#/components/parameters/ElderId"
@@ -418,6 +617,10 @@ components:
       type: http
       scheme: bearer
       description: 태블릿 기기 토큰. 서버는 SHA-256 해시만 저장합니다(`device.token_hash`).
+    guardianAuth:
+      type: http
+      scheme: bearer
+      description: 보호자 로그인으로 받은 액세스 토큰
 
   parameters:
     VisitId:
@@ -848,6 +1051,52 @@ components:
           minimum: 1
           nullable: true
           description: 어르신별 하루 토큰 한도. null이면 서버 기본값
+
+    GuardianLoginResponse:
+      type: object
+      required: [accessToken, expiresAt, guardian, elders]
+      properties:
+        accessToken:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        guardian:
+          $ref: "#/components/schemas/Guardian"
+        elders:
+          type: array
+          items:
+            $ref: "#/components/schemas/ElderSummary"
+
+    GuardianContext:
+      type: object
+      required: [guardian, elders]
+      properties:
+        guardian:
+          $ref: "#/components/schemas/Guardian"
+        elders:
+          type: array
+          items:
+            $ref: "#/components/schemas/ElderSummary"
+
+    Guardian:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    DailyDigestList:
+      type: object
+      required: [digests]
+      properties:
+        digests:
+          type: array
+          items:
+            $ref: "#/components/schemas/DailyDigest"
 
     DailyDigest:
       type: object

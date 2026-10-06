@@ -39,8 +39,11 @@ const (
 type HubConfig struct {
 	// PromptVersion is recorded on companion sessions the tablet starts.
 	PromptVersion string
-	STT           speech.Recognizer
-	TTS           speech.Synthesizer
+	// CanStart says whether a companion session may start now ("" for yes,
+	// else the session.rejected reason). Nil allows every request.
+	CanStart func(ctx context.Context, elderID uuid.UUID) (string, error)
+	STT      speech.Recognizer
+	TTS      speech.Synthesizer
 }
 
 // Hub serves GET /ws/elder: one connection per elder tablet. It also tells
@@ -52,6 +55,9 @@ type Hub struct {
 	cfg     HubConfig
 	logger  *slog.Logger
 	schema  *jsonschema.Schema
+
+	// ended hear about every session the hub ends (the hub itself first).
+	ended []EndListener
 
 	mu       sync.Mutex
 	byDevice map[uuid.UUID]*conn
@@ -80,11 +86,22 @@ func NewHub(q *db.Queries, engine *Engine, openers *opener.Library, cfg HubConfi
 	if err != nil {
 		return nil, fmt.Errorf("compile ws-events schema: %w", err)
 	}
-	return &Hub{
+	h := &Hub{
 		q: q, engine: engine, openers: openers, cfg: cfg, logger: logger, schema: schema,
 		byDevice: map[uuid.UUID]*conn{}, byElder: map[uuid.UUID]*conn{}, lastEta: map[uuid.UUID]int{},
-	}, nil
+	}
+	h.ended = []EndListener{h}
+	return h, nil
 }
+
+// EndListener hears about a session that ended.
+type EndListener interface {
+	SessionEnded(ctx context.Context, s db.ConversationSession)
+}
+
+// AlsoNotify adds listeners for the sessions the hub ends (the job queue
+// writes the briefing). Call it before serving.
+func (h *Hub) AlsoNotify(l ...EndListener) { h.ended = append(h.ended, l...) }
 
 // envelope is a text frame (api/ws-events.md section 2).
 type envelope struct {
@@ -181,6 +198,34 @@ func (h *Hub) SessionEnded(_ context.Context, s db.ConversationSession) {
 		// After the events of a turn still being delivered.
 		reason := *s.EndedReason
 		c.later(func() { c.send("session.ended", map[string]any{"sessionId": s.ID, "reason": reason}) })
+	}
+}
+
+// Connected reports whether the elder's tablet is online.
+func (h *Hub) Connected(elderID uuid.UUID) bool { return h.connFor(elderID) != nil }
+
+// CompanionStarted tells the tablet about a companion session the server
+// started (a scheduled check-in call) and greets the elder.
+func (h *Hub) CompanionStarted(_ context.Context, s db.ConversationSession) {
+	if c := h.connFor(s.ElderID); c != nil {
+		c.started(s, nil)
+	}
+}
+
+// End ends a session for reason and tells the tablet. Ending one that already
+// ended does nothing.
+func (h *Hub) End(ctx context.Context, sessionID uuid.UUID, reason string) {
+	ended, err := h.q.EndSession(context.WithoutCancel(ctx), db.EndSessionParams{ID: sessionID, EndedReason: &reason})
+	if errors.Is(err, pgx.ErrNoRows) {
+		return
+	}
+	if err != nil {
+		h.logger.ErrorContext(ctx, "end session failed", "session_id", sessionID, "reason", reason, "err", err)
+		return
+	}
+	h.logger.InfoContext(ctx, "session ended", "session_id", sessionID, "reason", reason)
+	for _, n := range h.ended {
+		n.SessionEnded(ctx, ended)
 	}
 }
 
@@ -490,9 +535,12 @@ func (c *conn) checkSession(sessionID uuid.UUID, msgID string) bool {
 }
 
 func (c *conn) turn(sessionID uuid.UUID, clientID, text, msgID string) {
-	_, err := c.h.engine.HandleElderText(c.ctx, sessionID, text, &wsSink{c: c, clientID: clientID})
+	res, err := c.h.engine.HandleElderText(c.ctx, sessionID, text, &wsSink{c: c, clientID: clientID})
 	switch {
 	case err == nil:
+		if res.End != "" {
+			c.h.End(c.ctx, sessionID, res.End)
+		}
 	case errors.Is(err, ErrEmptyText):
 		c.sendError("INVALID_MESSAGE", "발화가 비어 있습니다.", msgID)
 	case errors.Is(err, ErrSessionNotFound), errors.Is(err, ErrSessionEnded):
@@ -574,7 +622,6 @@ func (c *conn) clientMetrics(data json.RawMessage) {
 }
 
 // requestCompanion starts a companion session at the elder's button press.
-// Bedtime and the daily token limit are checked from stage 6.
 func (c *conn) requestCompanion(msgID string) {
 	reject := func(reason string) { c.send("session.rejected", map[string]any{"reason": reason}) }
 
@@ -585,14 +632,16 @@ func (c *conn) requestCompanion(msgID string) {
 		c.internal("read open session", err, msgID)
 		return
 	}
-	sched, err := c.h.q.GetCompanionSchedule(c.ctx, c.tablet.ElderID)
-	switch {
-	case err == nil && !sched.Enabled:
-		reject("COMPANION_DISABLED")
-		return
-	case err != nil && !errors.Is(err, pgx.ErrNoRows):
-		c.internal("read companion schedule", err, msgID)
-		return
+	if c.h.cfg.CanStart != nil {
+		why, err := c.h.cfg.CanStart(c.ctx, c.tablet.ElderID)
+		if err != nil {
+			c.internal("check companion policy", err, msgID)
+			return
+		}
+		if why != "" {
+			reject(why)
+			return
+		}
 	}
 	s, err := c.h.q.CreateCompanionSession(c.ctx, db.CreateCompanionSessionParams{
 		ElderID: c.tablet.ElderID, StartedBy: "ELDER", PromptVersion: &c.h.cfg.PromptVersion,
@@ -626,16 +675,7 @@ func (c *conn) endSession(id uuid.UUID, msgID string) {
 		c.sendError("INVALID_MESSAGE", "픽업 대기 세션은 선생님이 도착하면 끝납니다.", msgID)
 		return
 	}
-	ended, err := c.h.q.EndSession(c.ctx, db.EndSessionParams{ID: id, EndedReason: ptr("ELDER_DECLINED")})
-	if errors.Is(err, pgx.ErrNoRows) {
-		c.sendError("NO_ACTIVE_SESSION", "진행 중인 세션이 아닙니다.", msgID)
-		return
-	}
-	if err != nil {
-		c.internal("end session", err, msgID)
-		return
-	}
-	c.h.SessionEnded(c.ctx, ended)
+	c.h.End(c.ctx, id, EndElderDeclined)
 }
 
 func (c *conn) internal(what string, err error, msgID string) {

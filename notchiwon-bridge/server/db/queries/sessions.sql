@@ -50,3 +50,53 @@ FROM conversation_session
 JOIN elder ON elder.id = conversation_session.elder_id
 LEFT JOIN visit ON visit.id = conversation_session.visit_id
 WHERE conversation_session.id = $1;
+
+-- name: SetHistorySummary :exec
+-- 더 앞선 요약으로 덮어쓰지 않습니다(작업이 늦게 끝나도 안전).
+UPDATE conversation_session
+SET history_summary = sqlc.arg(summary),
+    history_summary_through = sqlc.arg(through)
+WHERE id = sqlc.arg(id)
+  AND (history_summary_through IS NULL OR history_summary_through < sqlc.arg(through));
+
+-- name: ListOpenCompanionSessions :many
+-- 무응답·취침 시간 종료를 확인할 진행 중 말동무 세션과 마지막 발화 시각.
+SELECT
+    sqlc.embed(conversation_session),
+    COALESCE(
+        (SELECT max(u.created_at) FROM utterance u WHERE u.session_id = conversation_session.id),
+        conversation_session.started_at
+    )::timestamptz AS last_activity_at
+FROM conversation_session
+WHERE mode = 'COMPANION' AND ended_at IS NULL;
+
+-- name: HasScheduledSessionSince :one
+-- 그 안부 시각에 이미 안부 대화를 시작했는지.
+SELECT EXISTS (
+    SELECT 1 FROM conversation_session
+    WHERE elder_id = sqlc.arg(elder_id)
+      AND started_by = 'SCHEDULE'
+      AND started_at >= sqlc.arg(since)
+) AS started;
+
+-- name: ListElderSessionsBetween :many
+-- 하루 요약용: 그날 끝난 말동무 세션과 브리핑(없으면 NULL).
+SELECT
+    sqlc.embed(conversation_session),
+    briefing_report.summary_text,
+    briefing_report.emotion_flag
+FROM conversation_session
+LEFT JOIN briefing_report ON briefing_report.session_id = conversation_session.id
+WHERE conversation_session.elder_id = sqlc.arg(elder_id)
+  AND conversation_session.mode = 'COMPANION'
+  AND conversation_session.started_at >= sqlc.arg(from_time)
+  AND conversation_session.started_at < sqlc.arg(to_time)
+ORDER BY conversation_session.started_at;
+
+-- name: ListEldersWithCompanionBetween :many
+-- 하루 요약을 만들 어르신: 그날 말동무 대화가 있었던 어르신.
+SELECT DISTINCT elder_id
+FROM conversation_session
+WHERE mode = 'COMPANION'
+  AND started_at >= sqlc.arg(from_time)
+  AND started_at < sqlc.arg(to_time);

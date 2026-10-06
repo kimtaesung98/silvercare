@@ -1,0 +1,11 @@
+어르신: {{.ElderName}}
+{{- if .Previous}}
+
+지금까지 요약:
+{{.Previous}}
+{{- end}}
+
+이어지는 대화:
+{{- range .Lines}}
+{{.}}
+{{- end}}

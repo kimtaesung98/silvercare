@@ -22,6 +22,15 @@ type Config struct {
 	AuthSecret        string        `env:"AUTH_SECRET,required,notEmpty"`
 	CaregiverTokenTTL time.Duration `env:"CAREGIVER_TOKEN_TTL" envDefault:"12h"`
 
+	// CompanionDailyTokenLimit caps one elder's companion talk per day when
+	// the elder's own schedule sets no limit.
+	CompanionDailyTokenLimit int64 `env:"COMPANION_DAILY_TOKEN_LIMIT" envDefault:"60000"`
+	// CompanionIdleAfter ends a companion session the elder stopped answering.
+	CompanionIdleAfter time.Duration `env:"COMPANION_IDLE_AFTER" envDefault:"5m"`
+	// CompanionDigestAt is the local time the guardian's daily digest goes
+	// out when the elder has no bedtime set.
+	CompanionDigestAt string `env:"COMPANION_DIGEST_AT" envDefault:"21:00"`
+
 	// SessionTriggerEtaMinutes starts a pickup session once the caregiver's ETA is at or below it.
 	SessionTriggerEtaMinutes int `env:"SESSION_TRIGGER_ETA_MINUTES" envDefault:"15"`
 

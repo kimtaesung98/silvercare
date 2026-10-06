@@ -338,11 +338,3 @@ func TestOpenerClipAudio(t *testing.T) {
 	}
 	decode[apigen.ApiError](t, client{t: t, h: newHandler(pool)}.do(http.MethodGet, path, nil), http.StatusUnauthorized)
 }
-
-func TestLaterStageEndpointsAnswer501(t *testing.T) {
-	_, f, c := setup(t, time.Now().Add(time.Hour))
-	e := decode[apigen.ApiError](t, c.do(http.MethodGet, "/elders/"+f.ElderID.String()+"/companion-schedule", nil), http.StatusNotImplemented)
-	if e.Code != "NOT_IMPLEMENTED" {
-		t.Errorf("code %q", e.Code)
-	}
-}
