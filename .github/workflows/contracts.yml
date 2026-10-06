@@ -1,0 +1,44 @@
+name: contracts
+
+# openapi.yaml, 마이그레이션, sqlc 쿼리에서 만든 코드(Go 서버, Dart 클라이언트)가
+# 커밋된 생성 결과와 같은지 확인합니다. 다르면 server/에서 `make generate`를 돌려 커밋하세요.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: notchiwon-bridge/server/go.mod
+          cache-dependency-path: notchiwon-bridge/server/go.sum
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - uses: actions/cache@v4
+        with:
+          path: notchiwon-bridge/server/.tools
+          key: codegen-tools-${{ hashFiles('notchiwon-bridge/server/Makefile') }}
+      - name: flutter pub get
+        working-directory: notchiwon-bridge/app
+        run: flutter pub get
+      - name: make generate
+        working-directory: notchiwon-bridge/server
+        run: make generate
+      - name: generated code is committed
+        run: |
+          git add -N .
+          if ! git diff --exit-code --stat; then
+            echo "::error::생성 코드가 계약과 다릅니다. notchiwon-bridge/server에서 'make generate'를 돌려 커밋하세요."
+            git diff | head -200
+            exit 1
+          fi
