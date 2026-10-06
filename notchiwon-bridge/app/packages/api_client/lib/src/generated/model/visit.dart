@@ -20,6 +20,7 @@ class Visit {
     required this.status,
     this.actualArrivalTime,
     this.sessionId,
+    this.destination,
   });
 
   String id;
@@ -37,6 +38,9 @@ class Visit {
   /// 픽업 대기 세션이 시작됐으면 그 ID
   String? sessionId;
 
+  /// 어르신 댁 (등록되지 않았으면 null)
+  Place? destination;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -47,7 +51,8 @@ class Visit {
           other.etaCurrent == etaCurrent &&
           other.status == status &&
           other.actualArrivalTime == actualArrivalTime &&
-          other.sessionId == sessionId;
+          other.sessionId == sessionId &&
+          other.destination == destination;
 
   @override
   int get hashCode =>
@@ -58,11 +63,12 @@ class Visit {
       (etaCurrent == null ? 0 : etaCurrent!.hashCode) +
       (status.hashCode) +
       (actualArrivalTime == null ? 0 : actualArrivalTime!.hashCode) +
-      (sessionId == null ? 0 : sessionId!.hashCode);
+      (sessionId == null ? 0 : sessionId!.hashCode) +
+      (destination == null ? 0 : destination!.hashCode);
 
   @override
   String toString() =>
-      'Visit[id=$id, elder=$elder, scheduledTime=$scheduledTime, etaCurrent=$etaCurrent, status=$status, actualArrivalTime=$actualArrivalTime, sessionId=$sessionId]';
+      'Visit[id=$id, elder=$elder, scheduledTime=$scheduledTime, etaCurrent=$etaCurrent, status=$status, actualArrivalTime=$actualArrivalTime, sessionId=$sessionId, destination=$destination]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
@@ -85,6 +91,11 @@ class Visit {
       json[r'sessionId'] = this.sessionId;
     } else {
       json[r'sessionId'] = null;
+    }
+    if (this.destination != null) {
+      json[r'destination'] = this.destination;
+    } else {
+      json[r'destination'] = null;
     }
     return json;
   }
@@ -127,6 +138,7 @@ class Visit {
         status: VisitStatus.fromJson(json[r'status'])!,
         actualArrivalTime: mapDateTime(json, r'actualArrivalTime', r''),
         sessionId: mapValueOfType<String>(json, r'sessionId'),
+        destination: Place.fromJson(json[r'destination']),
       );
     }
     return null;

@@ -170,10 +170,18 @@ type Escalation struct {
 
 	// UtteranceText 감지된 어르신 발화
 	UtteranceText *string `json:"utteranceText"`
+
+	// VisitId 픽업 대기 중이었으면 그 방문 (말동무 세션이면 null)
+	VisitId *openapi_types.UUID `json:"visitId"`
 }
 
 // EscalationSource RULE은 규칙 필터, LLM은 Claude의 `flag_concern` 도구
 type EscalationSource string
+
+// EscalationList defines model for EscalationList.
+type EscalationList struct {
+	Escalations []Escalation `json:"escalations"`
+}
 
 // EscalationTriggerType defines model for EscalationTriggerType.
 type EscalationTriggerType string
@@ -239,6 +247,13 @@ type OpenerClipManifest struct {
 	Voice   string `json:"voice"`
 }
 
+// Place defines model for Place.
+type Place struct {
+	Address   *string `json:"address"`
+	Latitude  float64 `json:"latitude"`
+	Longitude float64 `json:"longitude"`
+}
+
 // SessionMode defines model for SessionMode.
 type SessionMode string
 
@@ -255,11 +270,14 @@ type TabletContext struct {
 
 // Visit defines model for Visit.
 type Visit struct {
-	ActualArrivalTime *time.Time         `json:"actualArrivalTime"`
-	Elder             ElderSummary       `json:"elder"`
-	EtaCurrent        *time.Time         `json:"etaCurrent"`
-	Id                openapi_types.UUID `json:"id"`
-	ScheduledTime     time.Time          `json:"scheduledTime"`
+	ActualArrivalTime *time.Time `json:"actualArrivalTime"`
+
+	// Destination 어르신 댁 (등록되지 않았으면 null)
+	Destination   *Place             `json:"destination"`
+	Elder         ElderSummary       `json:"elder"`
+	EtaCurrent    *time.Time         `json:"etaCurrent"`
+	Id            openapi_types.UUID `json:"id"`
+	ScheduledTime time.Time          `json:"scheduledTime"`
 
 	// SessionId 픽업 대기 세션이 시작됐으면 그 ID
 	SessionId *openapi_types.UUID `json:"sessionId"`
@@ -324,6 +342,9 @@ type ServerInterface interface {
 	// 보호자용 하루 요약
 	// (GET /elders/{elderId}/daily-digests/{date})
 	GetDailyDigest(w http.ResponseWriter, r *http.Request, elderId ElderId, date openapi_types.Date)
+	// 확인하지 않은 위급 이벤트 (최근 24시간, 로그인한 조무사의 방문)
+	// (GET /escalations/open)
+	ListOpenEscalations(w http.ResponseWriter, r *http.Request)
 	// 위급 이벤트 (FCM 알림을 눌렀을 때)
 	// (GET /escalations/{escalationId})
 	GetEscalation(w http.ResponseWriter, r *http.Request, escalationId EscalationId)
@@ -393,6 +414,12 @@ func (_ Unimplemented) PutCompanionSchedule(w http.ResponseWriter, r *http.Reque
 // 보호자용 하루 요약
 // (GET /elders/{elderId}/daily-digests/{date})
 func (_ Unimplemented) GetDailyDigest(w http.ResponseWriter, r *http.Request, elderId ElderId, date openapi_types.Date) {
+	w.WriteHeader(http.StatusNotImplemented)
+}
+
+// 확인하지 않은 위급 이벤트 (최근 24시간, 로그인한 조무사의 방문)
+// (GET /escalations/open)
+func (_ Unimplemented) ListOpenEscalations(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNotImplemented)
 }
 
@@ -602,6 +629,26 @@ func (siw *ServerInterfaceWrapper) GetDailyDigest(w http.ResponseWriter, r *http
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetDailyDigest(w, r, elderId, date)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListOpenEscalations operation middleware
+func (siw *ServerInterfaceWrapper) ListOpenEscalations(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, CaregiverAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListOpenEscalations(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -1062,6 +1109,9 @@ func HandlerWithOptions(si ServerInterface, options ChiServerOptions) http.Handl
 		r.Get(options.BaseURL+"/elders/{elderId}/daily-digests/{date}", wrapper.GetDailyDigest)
 	})
 	r.Group(func(r chi.Router) {
+		r.Get(options.BaseURL+"/escalations/open", wrapper.ListOpenEscalations)
+	})
+	r.Group(func(r chi.Router) {
 		r.Get(options.BaseURL+"/escalations/{escalationId}", wrapper.GetEscalation)
 	})
 	r.Group(func(r chi.Router) {
@@ -1279,6 +1329,31 @@ type GetDailyDigest404JSONResponse struct{ NotFoundJSONResponse }
 func (response GetDailyDigest404JSONResponse) VisitGetDailyDigestResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListOpenEscalationsRequestObject struct {
+}
+
+type ListOpenEscalationsResponseObject interface {
+	VisitListOpenEscalationsResponse(w http.ResponseWriter) error
+}
+
+type ListOpenEscalations200JSONResponse EscalationList
+
+func (response ListOpenEscalations200JSONResponse) VisitListOpenEscalationsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type ListOpenEscalations401JSONResponse struct{ UnauthorizedJSONResponse }
+
+func (response ListOpenEscalations401JSONResponse) VisitListOpenEscalationsResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
 
 	return json.NewEncoder(w).Encode(response)
 }
@@ -1709,6 +1784,9 @@ type StrictServerInterface interface {
 	// 보호자용 하루 요약
 	// (GET /elders/{elderId}/daily-digests/{date})
 	GetDailyDigest(ctx context.Context, request GetDailyDigestRequestObject) (GetDailyDigestResponseObject, error)
+	// 확인하지 않은 위급 이벤트 (최근 24시간, 로그인한 조무사의 방문)
+	// (GET /escalations/open)
+	ListOpenEscalations(ctx context.Context, request ListOpenEscalationsRequestObject) (ListOpenEscalationsResponseObject, error)
 	// 위급 이벤트 (FCM 알림을 눌렀을 때)
 	// (GET /escalations/{escalationId})
 	GetEscalation(ctx context.Context, request GetEscalationRequestObject) (GetEscalationResponseObject, error)
@@ -1917,6 +1995,30 @@ func (sh *strictHandler) GetDailyDigest(w http.ResponseWriter, r *http.Request, 
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(GetDailyDigestResponseObject); ok {
 		if err := validResponse.VisitGetDailyDigestResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListOpenEscalations operation middleware
+func (sh *strictHandler) ListOpenEscalations(w http.ResponseWriter, r *http.Request) {
+	var request ListOpenEscalationsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListOpenEscalations(ctx, request.(ListOpenEscalationsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListOpenEscalations")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListOpenEscalationsResponseObject); ok {
+		if err := validResponse.VisitListOpenEscalationsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

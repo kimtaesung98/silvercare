@@ -62,7 +62,7 @@ func (q *Queries) GetDailyDigest(ctx context.Context, arg GetDailyDigestParams) 
 }
 
 const getElder = `-- name: GetElder :one
-SELECT id, name, birth_date, dementia_stage, preferred_tts_voice, guardian_id, center_id, created_at, updated_at FROM elder WHERE id = $1
+SELECT id, name, birth_date, dementia_stage, preferred_tts_voice, guardian_id, center_id, created_at, updated_at, home_address, home_latitude, home_longitude FROM elder WHERE id = $1
 `
 
 func (q *Queries) GetElder(ctx context.Context, id uuid.UUID) (Elder, error) {
@@ -78,6 +78,9 @@ func (q *Queries) GetElder(ctx context.Context, id uuid.UUID) (Elder, error) {
 		&i.CenterID,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.HomeAddress,
+		&i.HomeLatitude,
+		&i.HomeLongitude,
 	)
 	return i, err
 }

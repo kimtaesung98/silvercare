@@ -340,8 +340,8 @@ func TestOpenerClipAudio(t *testing.T) {
 }
 
 func TestLaterStageEndpointsAnswer501(t *testing.T) {
-	_, _, c := setup(t, time.Now().Add(time.Hour))
-	e := decode[apigen.ApiError](t, c.do(http.MethodGet, "/escalations/"+uuid.NewString(), nil), http.StatusNotImplemented)
+	_, f, c := setup(t, time.Now().Add(time.Hour))
+	e := decode[apigen.ApiError](t, c.do(http.MethodGet, "/elders/"+f.ElderID.String()+"/companion-schedule", nil), http.StatusNotImplemented)
 	if e.Code != "NOT_IMPLEMENTED" {
 		t.Errorf("code %q", e.Code)
 	}

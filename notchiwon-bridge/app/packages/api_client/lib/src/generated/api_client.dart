@@ -226,6 +226,8 @@ class ApiClient {
           return EmotionTagTypeTransformer().decode(value);
         case 'Escalation':
           return Escalation.fromJson(value);
+        case 'EscalationList':
+          return EscalationList.fromJson(value);
         case 'EscalationTriggerType':
           return EscalationTriggerTypeTypeTransformer().decode(value);
         case 'FcmTokenRegistration':
@@ -242,6 +244,8 @@ class ApiClient {
           return OpenerClip.fromJson(value);
         case 'OpenerClipManifest':
           return OpenerClipManifest.fromJson(value);
+        case 'Place':
+          return Place.fromJson(value);
         case 'SessionMode':
           return SessionModeTypeTransformer().decode(value);
         case 'TabletContext':

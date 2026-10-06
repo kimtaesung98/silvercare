@@ -42,5 +42,5 @@ func FromLLM(ctx context.Context, q *db.Queries, sessionID, utteranceID uuid.UUI
 	})
 }
 
-// noTargets is notified_targets until FCM alerts arrive in stage 5.
+// noTargets is notified_targets until the alert job records who was pushed.
 var noTargets = []byte(`[]`)

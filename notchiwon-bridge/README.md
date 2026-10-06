@@ -69,7 +69,7 @@ go run ./cmd/admin seed-demo                 # 데모 센터·어르신·조무�
 
 조무사 앱은 `POST /auth/caregiver/login`으로 받은 토큰, 태블릿은 기기 토큰을 `Authorization: Bearer`로 보냅니다.
 실제 계정은 `go run ./cmd/admin set-caregiver-login -caregiver <id> -login <아이디>`(비밀번호는 표준 입력), 태블릿은 `go run ./cmd/admin create-tablet -elder <id>`로 발급합니다.
-지금 ETA는 가짜(방문 예정 시각까지 남은 분)라서 예정 15분 전부터 위치를 보내면 픽업 대기 세션이 시작됩니다.
+ETA는 `KAKAO_MOBILITY_API_KEY`가 있으면 카카오모빌리티 길찾기로, 없으면 방문 예정 시각까지 남은 분으로 셉니다. ETA가 15분(`SESSION_TRIGGER_ETA_MINUTES`) 이내가 되면 픽업 대기 세션이 시작되고, 도착 처리하면 브리핑이 비동기로 만들어집니다.
 
 ### 텍스트로 대화해 보기
 
@@ -105,7 +105,14 @@ cd apps/elder_tablet && flutter run \
   --dart-define=SERVER_URL=http://10.0.2.2:8000 \
   --dart-define=DEVICE_TOKEN=...
 
-cd apps/caregiver && flutter run       # 조무사 앱
+# 조무사 앱: Firebase 값은 Firebase 콘솔 > 프로젝트 설정 > Android 앱(kr.notchiwon.caregiver)에서.
+# 비워 두면 푸시 없이 동작하고 위급 알림은 홈 화면 목록으로만 봅니다.
+cd apps/caregiver && flutter run \
+  --dart-define=SERVER_URL=http://10.0.2.2:8000 \
+  --dart-define=FIREBASE_API_KEY=... \
+  --dart-define=FIREBASE_APP_ID=... \
+  --dart-define=FIREBASE_SENDER_ID=... \
+  --dart-define=FIREBASE_PROJECT_ID=...
 
 # 검사 (app/ 에서)
 dart format . && flutter analyze
@@ -122,13 +129,21 @@ done
 cd server && go run ./cmd/admin synth-openers
 ```
 
+### 픽업 흐름 처음부터 끝까지 시험하기
+
+1. `.env`에 `ANTHROPIC_API_KEY`, `NAVER_CLOVA_CLIENT_ID`/`SECRET`, `KAKAO_MOBILITY_API_KEY`, `FCM_CREDENTIALS_FILE`(Firebase 서비스 계정 JSON 경로)을 넣고 서버를 띄웁니다. 빠진 키가 있으면 시작 로그에 무엇이 대신 동작하는지 경고가 나옵니다.
+2. `go run ./cmd/admin seed-demo`로 조무사 계정·30분 뒤 방문·태블릿 토큰을 받고, `go run ./cmd/admin synth-openers`로 0번 문장 음성을 만듭니다. 데모 어르신 댁은 서울 종로구 세종대로 175입니다(실제 주소는 DB `elder.home_*`에).
+3. 태블릿(또는 에뮬레이터)에 어르신 앱을, 휴대폰에 조무사 앱을 설치합니다. 실제 기기에서는 `SERVER_URL`을 개발 PC의 사설 IP로 넣습니다.
+4. 조무사 앱에서 로그인 → 방문 → "출발하기". ETA가 15분 이내면 태블릿에서 대화가 시작됩니다(가까이 있으면 `SESSION_TRIGGER_ETA_MINUTES`를 크게).
+5. 태블릿에 "다리가 너무 아파"라고 말하면 휴대폰에 위급 알림이 옵니다. "도착했어요"를 누르면 몇 초 뒤 브리핑 카드가 뜹니다.
+
 ## CI
 
 PR마다 `.github/workflows/server.yml`(gofmt, go vet, Postgres를 띄운 go test), `app.yml`(dart format, flutter analyze, flutter test), `contracts.yml`(생성 코드가 계약과 같은지)이 돕니다.
 
 ## 다음 단계
 
-[docs/development-process.md](docs/development-process.md)의 단계 5(조무사 앱: 방문 목록·지도·ETA, FCM 위급 알림, River 브리핑)입니다.
+[docs/development-process.md](docs/development-process.md)의 단계 6(말동무 모드: 보호자 지정 시각 안부, 하루 요약, 토큰 한도)입니다.
 
 ## 참고 문서
 - 기획서: `노치원_AI_브릿지_시스템_기획서.md`

@@ -22,6 +22,7 @@ class Escalation {
     this.reason,
     required this.createdAt,
     this.acknowledgedAt,
+    this.visitId,
   });
 
   String id;
@@ -45,6 +46,9 @@ class Escalation {
 
   DateTime? acknowledgedAt;
 
+  /// 픽업 대기 중이었으면 그 방문 (말동무 세션이면 null)
+  String? visitId;
+
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -57,7 +61,8 @@ class Escalation {
           other.utteranceText == utteranceText &&
           other.reason == reason &&
           other.createdAt == createdAt &&
-          other.acknowledgedAt == acknowledgedAt;
+          other.acknowledgedAt == acknowledgedAt &&
+          other.visitId == visitId;
 
   @override
   int get hashCode =>
@@ -70,11 +75,12 @@ class Escalation {
       (utteranceText == null ? 0 : utteranceText!.hashCode) +
       (reason == null ? 0 : reason!.hashCode) +
       (createdAt.hashCode) +
-      (acknowledgedAt == null ? 0 : acknowledgedAt!.hashCode);
+      (acknowledgedAt == null ? 0 : acknowledgedAt!.hashCode) +
+      (visitId == null ? 0 : visitId!.hashCode);
 
   @override
   String toString() =>
-      'Escalation[id=$id, sessionId=$sessionId, elder=$elder, triggerType=$triggerType, source_=$source_, utteranceText=$utteranceText, reason=$reason, createdAt=$createdAt, acknowledgedAt=$acknowledgedAt]';
+      'Escalation[id=$id, sessionId=$sessionId, elder=$elder, triggerType=$triggerType, source_=$source_, utteranceText=$utteranceText, reason=$reason, createdAt=$createdAt, acknowledgedAt=$acknowledgedAt, visitId=$visitId]';
 
   Map<String, dynamic> toJson() {
     final json = <String, dynamic>{};
@@ -98,6 +104,11 @@ class Escalation {
       json[r'acknowledgedAt'] = this.acknowledgedAt!.toUtc().toIso8601String();
     } else {
       json[r'acknowledgedAt'] = null;
+    }
+    if (this.visitId != null) {
+      json[r'visitId'] = this.visitId;
+    } else {
+      json[r'visitId'] = null;
     }
     return json;
   }
@@ -150,6 +161,7 @@ class Escalation {
         reason: mapValueOfType<String>(json, r'reason'),
         createdAt: mapDateTime(json, r'createdAt', r'')!,
         acknowledgedAt: mapDateTime(json, r'acknowledgedAt', r''),
+        visitId: mapValueOfType<String>(json, r'visitId'),
       );
     }
     return null;

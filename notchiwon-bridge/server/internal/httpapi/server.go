@@ -3,11 +3,14 @@ package httpapi
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/apigen"
@@ -48,7 +51,7 @@ func mustCaregiver(ctx context.Context) (auth.Caregiver, error) {
 }
 
 func toVisit(d visit.Detail) apigen.Visit {
-	return apigen.Visit{
+	v := apigen.Visit{
 		Id:                d.Visit.ID,
 		Elder:             apigen.ElderSummary{Id: d.Visit.ElderID, Name: d.ElderName},
 		ScheduledTime:     d.Visit.ScheduledTime,
@@ -57,6 +60,10 @@ func toVisit(d visit.Detail) apigen.Visit {
 		ActualArrivalTime: d.Visit.ActualArrivalTime,
 		SessionId:         d.SessionID,
 	}
+	if h := d.Home; h != nil {
+		v.Destination = &apigen.Place{Latitude: h.Latitude, Longitude: h.Longitude, Address: h.Address}
+	}
+	return v
 }
 
 // GetHealth implements GET /healthz.
@@ -234,26 +241,193 @@ func (s *Server) GetTabletContext(ctx context.Context, _ apigen.GetTabletContext
 	return out, nil
 }
 
-// The endpoints below belong to later stages (development-process.md) and answer 501 until then.
+// errBriefingNotReady answers while the briefing job has not run yet; the
+// app retries.
+var errBriefingNotReady = apiError("BRIEFING_NOT_READY", "브리핑을 만들고 있습니다. 잠시 후 다시 시도해 주세요.")
 
-// GetSessionBriefing is stage 5.
-func (s *Server) GetSessionBriefing(context.Context, apigen.GetSessionBriefingRequestObject) (apigen.GetSessionBriefingResponseObject, error) {
-	return nil, errNotImplemented
+// ownSession reports whether the session belongs to one of the caregiver's
+// visits. Companion sessions belong to no caregiver.
+func (s *Server) ownSession(ctx context.Context, caregiverID, sessionID uuid.UUID) (bool, error) {
+	o, err := s.q.GetSessionOwner(ctx, sessionID)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read session: %w", err)
+	}
+	return o.CaregiverID != nil && *o.CaregiverID == caregiverID, nil
 }
 
-// MarkBriefingRead is stage 5.
-func (s *Server) MarkBriefingRead(context.Context, apigen.MarkBriefingReadRequestObject) (apigen.MarkBriefingReadResponseObject, error) {
-	return nil, errNotImplemented
+func (s *Server) briefing(ctx context.Context, sessionID uuid.UUID) (apigen.Briefing, error) {
+	d, err := s.q.GetBriefingDetail(ctx, sessionID)
+	if err != nil {
+		return apigen.Briefing{}, err
+	}
+	return toBriefing(d), nil
 }
 
-// GetEscalation is stage 5.
-func (s *Server) GetEscalation(context.Context, apigen.GetEscalationRequestObject) (apigen.GetEscalationResponseObject, error) {
-	return nil, errNotImplemented
+func toBriefing(d db.GetBriefingDetailRow) apigen.Briefing {
+	b := d.BriefingReport
+	out := apigen.Briefing{
+		SessionId:         b.SessionID,
+		SummaryText:       b.SummaryText,
+		TopKeywords:       []string{},
+		EmotionFlag:       b.EmotionFlag,
+		EscalationCount:   &d.EscalationCount,
+		GeneratedAt:       b.GeneratedAt,
+		ReadByCaregiverAt: b.ReadByCaregiverAt,
+	}
+	_ = json.Unmarshal(b.TopKeywords, &out.TopKeywords)
+	if d.OverallEmotionTag != nil {
+		tag := apigen.EmotionTag(*d.OverallEmotionTag)
+		out.OverallEmotionTag = &tag
+	}
+	return out
 }
 
-// AckEscalation is stage 5.
-func (s *Server) AckEscalation(context.Context, apigen.AckEscalationRequestObject) (apigen.AckEscalationResponseObject, error) {
-	return nil, errNotImplemented
+// GetSessionBriefing implements GET /sessions/{sessionId}/briefing.
+func (s *Server) GetSessionBriefing(ctx context.Context, req apigen.GetSessionBriefingRequestObject) (apigen.GetSessionBriefingResponseObject, error) {
+	c, err := mustCaregiver(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if ok, err := s.ownSession(ctx, c.ID, req.SessionId); err != nil {
+		return nil, err
+	} else if !ok {
+		return apigen.GetSessionBriefing404JSONResponse(errNotFound), nil
+	}
+	b, err := s.briefing(ctx, req.SessionId)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return apigen.GetSessionBriefing404JSONResponse(errBriefingNotReady), nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("read briefing: %w", err)
+	}
+	return apigen.GetSessionBriefing200JSONResponse(b), nil
+}
+
+// MarkBriefingRead implements POST /sessions/{sessionId}/briefing/read.
+func (s *Server) MarkBriefingRead(ctx context.Context, req apigen.MarkBriefingReadRequestObject) (apigen.MarkBriefingReadResponseObject, error) {
+	c, err := mustCaregiver(ctx)
+	if err != nil {
+		return nil, err
+	}
+	notFound := apigen.MarkBriefingRead404JSONResponse{NotFoundJSONResponse: apigen.NotFoundJSONResponse(errNotFound)}
+	if ok, err := s.ownSession(ctx, c.ID, req.SessionId); err != nil {
+		return nil, err
+	} else if !ok {
+		return notFound, nil
+	}
+	if _, err := s.q.MarkBriefingRead(ctx, req.SessionId); errors.Is(err, pgx.ErrNoRows) {
+		return notFound, nil
+	} else if err != nil {
+		return nil, fmt.Errorf("mark briefing read: %w", err)
+	}
+	b, err := s.briefing(ctx, req.SessionId)
+	if err != nil {
+		return nil, fmt.Errorf("read briefing: %w", err)
+	}
+	return apigen.MarkBriefingRead200JSONResponse(b), nil
+}
+
+// escalationRow is the columns GetEscalationDetail and
+// ListOpenEscalationsForCaregiver share.
+type escalationRow struct {
+	ev            db.EscalationEvent
+	elderID       uuid.UUID
+	elderName     string
+	utteranceText *string
+	visitID       *uuid.UUID
+}
+
+func toEscalation(r escalationRow) apigen.Escalation {
+	return apigen.Escalation{
+		Id:             r.ev.ID,
+		SessionId:      r.ev.SessionID,
+		Elder:          apigen.ElderSummary{Id: r.elderID, Name: r.elderName},
+		TriggerType:    apigen.EscalationTriggerType(r.ev.TriggerType),
+		Source:         apigen.EscalationSource(r.ev.Source),
+		UtteranceText:  r.utteranceText,
+		Reason:         r.ev.Reason,
+		CreatedAt:      r.ev.CreatedAt,
+		AcknowledgedAt: r.ev.AcknowledgedAt,
+		VisitId:        r.visitID,
+	}
+}
+
+// escalationFor reads an escalation the caregiver may see (one raised during
+// their own visit), or reports false.
+func (s *Server) escalationFor(ctx context.Context, caregiverID, id uuid.UUID) (escalationRow, bool, error) {
+	d, err := s.q.GetEscalationDetail(ctx, id)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return escalationRow{}, false, nil
+	}
+	if err != nil {
+		return escalationRow{}, false, fmt.Errorf("read escalation: %w", err)
+	}
+	if d.CaregiverID == nil || *d.CaregiverID != caregiverID {
+		return escalationRow{}, false, nil
+	}
+	return escalationRow{d.EscalationEvent, d.ElderID, d.ElderName, d.UtteranceText, d.VisitID}, true, nil
+}
+
+// ListOpenEscalations implements GET /escalations/open.
+func (s *Server) ListOpenEscalations(ctx context.Context, _ apigen.ListOpenEscalationsRequestObject) (apigen.ListOpenEscalationsResponseObject, error) {
+	c, err := mustCaregiver(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.q.ListOpenEscalationsForCaregiver(ctx, db.ListOpenEscalationsForCaregiverParams{
+		CaregiverID: c.ID, Since: time.Now().Add(-openEscalationWindow),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list open escalations: %w", err)
+	}
+	out := apigen.ListOpenEscalations200JSONResponse{Escalations: make([]apigen.Escalation, len(rows))}
+	for i, r := range rows {
+		out.Escalations[i] = toEscalation(escalationRow{r.EscalationEvent, r.ElderID, r.ElderName, r.UtteranceText, &r.VisitID})
+	}
+	return out, nil
+}
+
+// openEscalationWindow is how far back GET /escalations/open looks.
+const openEscalationWindow = 24 * time.Hour
+
+// GetEscalation implements GET /escalations/{escalationId}.
+func (s *Server) GetEscalation(ctx context.Context, req apigen.GetEscalationRequestObject) (apigen.GetEscalationResponseObject, error) {
+	c, err := mustCaregiver(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r, ok, err := s.escalationFor(ctx, c.ID, req.EscalationId)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return apigen.GetEscalation404JSONResponse{NotFoundJSONResponse: apigen.NotFoundJSONResponse(errNotFound)}, nil
+	}
+	return apigen.GetEscalation200JSONResponse(toEscalation(r)), nil
+}
+
+// AckEscalation implements POST /escalations/{escalationId}/ack.
+func (s *Server) AckEscalation(ctx context.Context, req apigen.AckEscalationRequestObject) (apigen.AckEscalationResponseObject, error) {
+	c, err := mustCaregiver(ctx)
+	if err != nil {
+		return nil, err
+	}
+	r, ok, err := s.escalationFor(ctx, c.ID, req.EscalationId)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return apigen.AckEscalation404JSONResponse{NotFoundJSONResponse: apigen.NotFoundJSONResponse(errNotFound)}, nil
+	}
+	ev, err := s.q.AcknowledgeEscalation(ctx, db.AcknowledgeEscalationParams{ID: req.EscalationId, CaregiverID: &c.ID})
+	if err != nil {
+		return nil, fmt.Errorf("acknowledge escalation: %w", err)
+	}
+	r.ev = ev
+	return apigen.AckEscalation200JSONResponse(toEscalation(r)), nil
 }
 
 // ListOpenerClips implements GET /tablet/opener-clips.
