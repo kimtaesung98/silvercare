@@ -1,5 +1,18 @@
+# Node (전환 기간 동안 남은 NestJS backend)
 node_modules/
 dist/
+
+# Go
+server/bin/
+
+# Flutter / Dart
+.dart_tool/
+app/**/build/
+app/**/.flutter-plugins-dependencies
+*.iml
+
+# 환경 변수
 .env
+
 *.log
 .DS_Store
