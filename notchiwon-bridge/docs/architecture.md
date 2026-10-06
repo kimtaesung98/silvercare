@@ -50,7 +50,7 @@ app/
 | --- | --- | --- |
 | 기기 | 어르신 댁에 둔 태블릿 1대 | 조무사 개인 휴대폰 |
 | 핵심 기능 | 픽업 대기 대화, 하원 후 말동무, 도착 임박 안내 | 방문 목록, 지도·ETA, 브리핑 카드, 위급 알림 |
-| 서버 통신 | `web_socket_channel` 상시 연결 | `dio` REST, 위치는 10초 간격 |
+| 서버 통신 | `web_socket_channel` 상시 연결 | 생성된 REST 클라이언트(`http`), 위치는 10초 간격 |
 | 음성 | `record`(녹음) + 발화 구간 감지, `just_audio`(재생 큐) | 없음 |
 | 기기 제어 | Lock Task 모드·화면 상시 켜짐 (플랫폼 채널로 Android 네이티브 호출) | 일반 앱 |
 | 백그라운드 | 마이크용 Foreground Service | `geolocator` + 위치용 Foreground Service |
@@ -88,7 +88,7 @@ server/
 | 용도 | 라이브러리 |
 | --- | --- |
 | 라우터 | `go-chi/chi/v5` |
-| REST 코드 생성 | `oapi-codegen` (Dart 클라이언트는 `openapi-generator`) |
+| REST 코드 생성 | `oapi-codegen` (Dart 클라이언트는 `openapi-generator`의 `dart` 생성기) |
 | DB | `jackc/pgx/v5` + `sqlc` |
 | 마이그레이션 | `pressly/goose/v3` |
 | WebSocket | `coder/websocket` |
@@ -173,19 +173,25 @@ Claude는 서버에서만 호출합니다. API 키가 기기에 남지 않고, �
 
 ### 6.5 WebSocket 이벤트 (`/ws/elder`)
 
+정확한 메시지 형태와 규칙은 [server/api/ws-events.md](../server/api/ws-events.md)(JSON 스키마 `ws-events.schema.json`)가 기준입니다.
+
 | 방향 | 이벤트 | 내용 |
 | --- | --- | --- |
-| 서버 → 태블릿 | `session.started` | 세션 ID, 모드, 첫 인사 |
-| 태블릿 → 서버 | `session.request` | 말동무 버튼 눌림 |
-| 태블릿 → 서버 | `elder.audio` | 발화 한 구간 오디오 (바이너리) |
+| 서버 → 태블릿 | `connection.ready` | 기기·어르신 ID, 진행 중 세션(재연결용), 0번 문장 목록 버전 |
+| 서버 → 태블릿 | `session.started` / `session.rejected` / `session.ended` | 세션 ID·모드 / 말동무 요청 거절 사유 / 종료 사유 |
+| 태블릿 → 서버 | `session.request` / `session.end` | 말동무 버튼 / 그만하기 버튼 |
+| 태블릿 → 서버 | `elder.audio` | 발화 한 구간 (다음 바이너리 프레임이 오디오) |
+| 태블릿 → 서버 | `elder.text` | 텍스트 모드 발화 (단계 3 개발용) |
 | 태블릿 → 서버 | `elder.barge_in` | 재생 중 어르신이 말을 시작함 |
-| 서버 → 태블릿 | `ai.opener` | 0번 문장 clip_id |
-| 서버 → 태블릿 | `ai.reply` | index, 텍스트, TTS 오디오 |
+| 서버 → 태블릿 | `elder.transcript` | STT 결과 |
+| 서버 → 태블릿 | `ai.opener` / `ai.filler` | 0번 문장 clip_id / 1번이 늦을 때 추임새 |
+| 서버 → 태블릿 | `ai.reply` | 문장 번호(1부터), 텍스트, TTS 오디오 |
+| 서버 → 태블릿 | `ai.turn_end` | 턴 종료 (정상, 대체 문장, 위급, 끼어들기) |
 | 서버 → 태블릿 | `caregiver.eta` | 남은 분 |
-| 서버 → 태블릿 | `session.ended` | 종료 사유 |
+| 서버 → 태블릿 | `error` | 처리하지 못한 메시지 |
 | 양방향 | `ping` / `pong` | 연결 확인 |
 
-조무사 앱은 REST로 충분합니다: `GET /visits/today`, `POST /visits/{id}/location`, `GET /sessions/{id}/briefing`, `POST /escalations/{id}/ack`.
+조무사 앱은 REST로 충분합니다: `GET /visits/today`, `POST /visits/{id}/location`, `POST /visits/{id}/arrive`, `GET /sessions/{id}/briefing`, `POST /escalations/{id}/ack` 등. 전체는 [server/api/openapi.yaml](../server/api/openapi.yaml)입니다.
 
 ## 7. 확정된 결정 (2026-10-05)
 
@@ -200,6 +206,9 @@ Claude는 서버에서만 호출합니다. API 키가 기기에 남지 않고, �
 | 7 | 기존 NestJS | PR #1은 닫고 동작만 Go 명세로, `backend/`는 Go가 따라잡으면 삭제 |
 | 8 | 말동무 시작 방식 | 버튼 시작, 대화 중에만 듣기 + 보호자 지정 시각 안부 |
 | 9 | 0번 문장 선택 | 서버가 STT 후 규칙으로 유형 분류, 태블릿은 캐시 음성 재생 |
+| 10 | Dart REST 클라이언트 (2026-10-06) | `openapi-generator`의 `dart`(http) 생성기. `dart-dio`는 build_runner가 필요해 생성 단계가 늘어남 |
+| 11 | Go 버전 (2026-10-06) | 1.25 (pgx v5.11이 요구) |
+| 12 | 진행 중 세션 (2026-10-06) | 어르신당 하나 (`conversation_session` 부분 유니크 인덱스). 픽업 대기 중 말동무 요청은 거절 |
 
 ## 8. 아직 정하지 않은 것
 

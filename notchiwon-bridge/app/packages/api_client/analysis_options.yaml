@@ -9,6 +9,8 @@ analyzer:
     - windows/**
     - macos/**
     - linux/**
+    # server/Makefile의 `make generate`가 만드는 코드
+    - lib/src/generated/**
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

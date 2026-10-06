@@ -1,5 +1,5 @@
 name: api_client
-description: "A new Flutter package project."
+description: "노치원 브릿지 서버 REST 클라이언트 (lib/src/generated는 server/api/openapi.yaml에서 생성)"
 version: 0.0.1
 homepage:
 
@@ -12,6 +12,11 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  # lib/src/generated (openapi-generator dart)가 쓰는 패키지
+  collection: ^1.19.0
+  http: ^1.2.0
+  intl: ^0.20.0
+  meta: ^1.15.0
 
 dev_dependencies:
   flutter_test:

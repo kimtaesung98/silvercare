@@ -26,15 +26,16 @@
 - [x] 초안 PR #1(NestJS 대화 루프)을 닫고, 동작과 테스트 케이스를 단계 3 명세로 옮김 ([specs/conversation-loop.md](./specs/conversation-loop.md))
 - [x] `server/` Go 모듈 생성 (`go mod init`, `cmd/api/main.go`, 헬스체크 `GET /healthz`)
 - [x] `app/` Flutter 저장소 생성 (`apps/elder_tablet`, `apps/caregiver`, `packages/*`)
-- [x] GitHub Actions: Go(gofmt, `go vet`, `go test`), Flutter(`dart format`, `flutter analyze`, `flutter test`) — `sqlc diff`는 단계 1에서 추가
+- [x] GitHub Actions: Go(gofmt, `go vet`, `go test`), Flutter(`dart format`, `flutter analyze`, `flutter test`) — 생성 코드 검사는 단계 1에서 `contracts` 작업으로 추가
 - [x] `docker-compose.yml`의 backend를 Go 서버 이미지로 교체 (기존 NestJS는 `legacy` 프로필로 유지)
 - [x] 기존 `apps/` placeholder(Flutter·React Native 예정 메모) 삭제, 내용은 `app/`과 architecture.md로 이동
 
 ### 단계 1: 계약 확정
-- [ ] 기존 API 명세 초안을 `server/api/openapi.yaml`로 옮기고 말동무·0번 문장 관련 엔드포인트 추가
-- [ ] Prisma 스키마를 `server/db/migrations/00001_init.sql`로 옮기며 architecture.md 5절의 변경 반영
-- [ ] WebSocket 이벤트를 JSON 스키마로 정의 (`server/api/ws-events.md`)
-- [ ] 코드 생성 스크립트 (`make generate`): sqlc, oapi-codegen, Dart 클라이언트
+- [x] 기존 API 명세 초안을 `server/api/openapi.yaml`로 옮기고 말동무·0번 문장 관련 엔드포인트 추가
+- [x] Prisma 스키마를 `server/db/migrations/00001_init.sql`로 옮기며 architecture.md 5절의 변경 반영 (sqlc 쿼리 `server/db/queries/`, 실제 Postgres 테스트 포함)
+- [x] WebSocket 이벤트를 JSON 스키마로 정의 (`server/api/ws-events.md`, `ws-events.schema.json`, 예시는 `go test ./api`로 검사)
+- [x] 코드 생성 스크립트 (`make generate`): sqlc, oapi-codegen, Dart 클라이언트. CI `contracts` 작업이 생성 결과가 커밋돼 있는지 확인
+- [ ] 주인 검토
 
 ### 단계 2: 서버 뼈대
 - [ ] 설정(`caarlos0/env`), 로깅(`slog`), pgx 풀, 서버 시작 시 goose 마이그레이션
