@@ -1,5 +1,5 @@
 name: elder_tablet
-description: "A new Flutter project."
+description: "어르신 태블릿 앱 (대기·대화·도착 임박 화면, 키오스크 모드)"
 publish_to: 'none'
 version: 0.1.0+1
 
@@ -11,10 +11,20 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  api_client:
+    path: ../../packages/api_client
+  ui:
+    path: ../../packages/ui
+  http: ^1.2.0
+  voice:
+    path: ../../packages/voice
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # 테스트에서 /ws/elder 채널을 흉내 냅니다.
+  stream_channel: ^2.1.2
+  web_socket_channel: ^3.0.3
   flutter_lints: ^6.0.0
 
 flutter:

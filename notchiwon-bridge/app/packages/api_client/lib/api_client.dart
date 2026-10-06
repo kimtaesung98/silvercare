@@ -5,3 +5,5 @@
 library;
 
 export 'src/generated/api.dart';
+export 'src/ws/elder_socket.dart';
+export 'src/ws/events.dart';
