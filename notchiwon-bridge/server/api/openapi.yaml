@@ -1,0 +1,832 @@
+openapi: 3.0.3
+info:
+  title: 노치원 픽업 브릿지 API
+  version: 0.1.0
+  description: |
+    조무사 앱과 어르신 태블릿 앱이 쓰는 REST 계약입니다.
+    실시간 대화(태블릿 ↔ 서버)는 WebSocket `/ws/elder`로 주고받으며 [ws-events.md](./ws-events.md)에 정의합니다.
+
+    - Go 서버 코드는 `oapi-codegen`, Dart 클라이언트는 `openapi-generator`로 생성합니다(`make generate`).
+    - 시각은 모두 RFC 3339(UTC 오프셋 포함)이고, "오늘"은 한국 시각(Asia/Seoul) 기준입니다.
+    - 오류 응답은 항상 `ApiError` 형태입니다.
+servers:
+  - url: http://localhost:8000
+    description: 로컬 개발
+tags:
+  - name: system
+  - name: auth
+    description: 조무사 로그인. 로그인 방식(전화번호 인증 vs 센터 발급 계정)은 아직 정하지 않았고, 아래는 단계 2의 임시 로그인입니다.
+  - name: visits
+    description: 조무사 앱 방문 목록과 위치 전송
+  - name: briefings
+  - name: escalations
+  - name: devices
+  - name: tablet
+    description: 어르신 태블릿 앱 (기기 토큰 인증)
+  - name: companion
+    description: 하원 후 말동무 모드 설정과 하루 요약
+security:
+  - caregiverAuth: []
+
+paths:
+  /healthz:
+    get:
+      tags: [system]
+      operationId: getHealth
+      security: []
+      responses:
+        "200":
+          description: 서버 정상
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+
+  /auth/caregiver/login:
+    post:
+      tags: [auth]
+      operationId: loginCaregiver
+      summary: 조무사 임시 로그인
+      description: 센터가 발급한 아이디·비밀번호로 로그인합니다. 로그인 방식이 정해지면 바뀔 수 있습니다.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CaregiverLoginRequest"
+      responses:
+        "200":
+          description: 로그인 성공
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CaregiverLoginResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /visits/today:
+    get:
+      tags: [visits]
+      operationId: listTodayVisits
+      summary: 로그인한 조무사의 오늘 방문 목록 (예정 시각순)
+      responses:
+        "200":
+          description: 오늘 방문 목록
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisitList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /visits/{visitId}:
+    parameters:
+      - $ref: "#/components/parameters/VisitId"
+    get:
+      tags: [visits]
+      operationId: getVisit
+      responses:
+        "200":
+          description: 방문
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Visit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /visits/{visitId}/location:
+    parameters:
+      - $ref: "#/components/parameters/VisitId"
+    post:
+      tags: [visits]
+      operationId: postVisitLocation
+      summary: 조무사 위치 전송 (약 10초 간격)
+      description: |
+        서버가 ETA를 다시 계산하고, ETA가 기준(`SESSION_TRIGGER_ETA_MINUTES`) 이내가 되면
+        픽업 대기 세션을 시작합니다. 세션 시작은 조건부 `UPDATE` 한 문장으로 차지하므로
+        같은 방문에 위치가 동시에 여러 번 와도 세션은 하나만 생깁니다.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/LocationUpdate"
+      responses:
+        "200":
+          description: ETA 갱신 결과
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LocationUpdateResult"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: 이미 완료·취소된 방문 (`code = VISIT_CLOSED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /visits/{visitId}/arrive:
+    parameters:
+      - $ref: "#/components/parameters/VisitId"
+    post:
+      tags: [visits]
+      operationId: arriveVisit
+      summary: 조무사 도착
+      description: 방문을 완료하고, 진행 중인 세션을 `CAREGIVER_ARRIVED`로 끝냅니다. 브리핑 생성은 비동기 작업으로 이어집니다.
+      responses:
+        "200":
+          description: 완료된 방문
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Visit"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          description: 이미 완료·취소된 방문 (`code = VISIT_CLOSED`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /sessions/{sessionId}/briefing:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    get:
+      tags: [briefings]
+      operationId: getSessionBriefing
+      summary: 도착 브리핑 카드
+      responses:
+        "200":
+          description: 브리핑
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Briefing"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          description: 세션이 없거나 브리핑이 아직 만들어지지 않음 (`code = NOT_FOUND` 또는 `BRIEFING_NOT_READY`)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ApiError"
+
+  /sessions/{sessionId}/briefing/read:
+    parameters:
+      - $ref: "#/components/parameters/SessionId"
+    post:
+      tags: [briefings]
+      operationId: markBriefingRead
+      summary: 브리핑 읽음 표시 (여러 번 호출해도 처음 시각 유지)
+      responses:
+        "200":
+          description: 읽음 표시된 브리핑
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Briefing"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /escalations/{escalationId}:
+    parameters:
+      - $ref: "#/components/parameters/EscalationId"
+    get:
+      tags: [escalations]
+      operationId: getEscalation
+      summary: 위급 이벤트 (FCM 알림을 눌렀을 때)
+      responses:
+        "200":
+          description: 위급 이벤트
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Escalation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /escalations/{escalationId}/ack:
+    parameters:
+      - $ref: "#/components/parameters/EscalationId"
+    post:
+      tags: [escalations]
+      operationId: ackEscalation
+      summary: 위급 알림 확인 (여러 번 호출해도 처음 확인한 시각·사람 유지)
+      responses:
+        "200":
+          description: 확인된 위급 이벤트
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Escalation"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /devices/me/fcm-token:
+    put:
+      tags: [devices]
+      operationId: putCaregiverFcmToken
+      summary: 조무사 휴대폰 FCM 토큰 등록·갱신
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FcmTokenRegistration"
+      responses:
+        "204":
+          description: 등록됨
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /tablet/me:
+    get:
+      tags: [tablet]
+      operationId: getTabletContext
+      summary: 태블릿이 켜질 때 받는 기기·어르신 정보
+      security:
+        - deviceAuth: []
+      responses:
+        "200":
+          description: 태블릿 정보
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TabletContext"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /tablet/opener-clips:
+    get:
+      tags: [tablet]
+      operationId: listOpenerClips
+      summary: 0번 문장 목록
+      description: |
+        어르신 목소리(`preferred_tts_voice`)로 미리 합성한 0번 문장 목록입니다.
+        태블릿은 `version`이 바뀌었을 때만 음성을 다시 내려받아 캐시합니다.
+      security:
+        - deviceAuth: []
+      responses:
+        "200":
+          description: 0번 문장 목록
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenerClipManifest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  /tablet/opener-clips/{clipId}/audio:
+    parameters:
+      - name: clipId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    get:
+      tags: [tablet]
+      operationId: getOpenerClipAudio
+      summary: 0번 문장 음성 파일
+      security:
+        - deviceAuth: []
+      responses:
+        "200":
+          description: 음성 (MP3)
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /elders/{elderId}/companion-schedule:
+    parameters:
+      - $ref: "#/components/parameters/ElderId"
+    get:
+      tags: [companion]
+      operationId: getCompanionSchedule
+      summary: 말동무 설정 (안부 시각, 취침 시간, 하루 토큰 한도)
+      responses:
+        "200":
+          description: 말동무 설정
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanionSchedule"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+    put:
+      tags: [companion]
+      operationId: putCompanionSchedule
+      summary: 말동무 설정 저장
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CompanionSchedule"
+      responses:
+        "200":
+          description: 저장된 설정
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CompanionSchedule"
+        "400":
+          $ref: "#/components/responses/BadRequest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+  /elders/{elderId}/daily-digests/{date}:
+    parameters:
+      - $ref: "#/components/parameters/ElderId"
+      - name: date
+        in: path
+        required: true
+        description: 한국 시각 기준 날짜
+        schema:
+          type: string
+          format: date
+    get:
+      tags: [companion]
+      operationId: getDailyDigest
+      summary: 보호자용 하루 요약
+      responses:
+        "200":
+          description: 하루 요약
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DailyDigest"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+
+components:
+  securitySchemes:
+    caregiverAuth:
+      type: http
+      scheme: bearer
+      description: 조무사 로그인으로 받은 액세스 토큰
+    deviceAuth:
+      type: http
+      scheme: bearer
+      description: 태블릿 기기 토큰. 서버는 SHA-256 해시만 저장합니다(`device.token_hash`).
+
+  parameters:
+    VisitId:
+      name: visitId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    EscalationId:
+      name: escalationId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    ElderId:
+      name: elderId
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  responses:
+    BadRequest:
+      description: 잘못된 요청 (`code = INVALID_ARGUMENT`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    Unauthorized:
+      description: 인증 실패 (`code = UNAUTHENTICATED`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+    NotFound:
+      description: 없음 (`code = NOT_FOUND`)
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ApiError"
+
+  schemas:
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          description: 기계가 읽는 오류 코드 (예 `NOT_FOUND`, `VISIT_CLOSED`, `BRIEFING_NOT_READY`)
+          example: NOT_FOUND
+        message:
+          type: string
+          description: 사람이 읽는 설명
+
+    Health:
+      type: object
+      required: [status]
+      properties:
+        status:
+          type: string
+          example: ok
+
+    CaregiverLoginRequest:
+      type: object
+      required: [loginId, password]
+      properties:
+        loginId:
+          type: string
+        password:
+          type: string
+          format: password
+
+    CaregiverLoginResponse:
+      type: object
+      required: [accessToken, expiresAt, caregiver]
+      properties:
+        accessToken:
+          type: string
+        expiresAt:
+          type: string
+          format: date-time
+        caregiver:
+          $ref: "#/components/schemas/Caregiver"
+
+    Caregiver:
+      type: object
+      required: [id, name, centerId]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        centerId:
+          type: string
+          format: uuid
+
+    ElderSummary:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+
+    VisitStatus:
+      type: string
+      enum: [SCHEDULED, EN_ROUTE, SESSION_ACTIVE, COMPLETED, CANCELLED]
+
+    Visit:
+      type: object
+      required: [id, elder, scheduledTime, status]
+      properties:
+        id:
+          type: string
+          format: uuid
+        elder:
+          $ref: "#/components/schemas/ElderSummary"
+        scheduledTime:
+          type: string
+          format: date-time
+        etaCurrent:
+          type: string
+          format: date-time
+          nullable: true
+        status:
+          $ref: "#/components/schemas/VisitStatus"
+        actualArrivalTime:
+          type: string
+          format: date-time
+          nullable: true
+        sessionId:
+          type: string
+          format: uuid
+          nullable: true
+          description: 픽업 대기 세션이 시작됐으면 그 ID
+
+    VisitList:
+      type: object
+      required: [visits]
+      properties:
+        visits:
+          type: array
+          items:
+            $ref: "#/components/schemas/Visit"
+
+    LocationUpdate:
+      type: object
+      required: [latitude, longitude, recordedAt]
+      properties:
+        latitude:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        longitude:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+        accuracyM:
+          type: number
+          format: double
+          minimum: 0
+          description: 위치 정확도(미터)
+        recordedAt:
+          type: string
+          format: date-time
+          description: 휴대폰에서 위치를 잰 시각
+
+    LocationUpdateResult:
+      type: object
+      required: [visitId, status, etaMinutes, sessionStarted]
+      properties:
+        visitId:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/VisitStatus"
+        etaMinutes:
+          type: integer
+          format: int32
+          minimum: 0
+        sessionStarted:
+          type: boolean
+          description: 이번 요청으로 세션이 시작됐으면 true (같은 방문에서 한 번만 true)
+        sessionId:
+          type: string
+          format: uuid
+          nullable: true
+
+    Briefing:
+      type: object
+      required: [sessionId, summaryText, topKeywords, generatedAt]
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        summaryText:
+          type: string
+        topKeywords:
+          type: array
+          items:
+            type: string
+        emotionFlag:
+          type: string
+          nullable: true
+          description: 평소와 다른 점 한 줄 (없으면 null)
+        overallEmotionTag:
+          $ref: "#/components/schemas/EmotionTag"
+        escalationCount:
+          type: integer
+          format: int32
+          minimum: 0
+        generatedAt:
+          type: string
+          format: date-time
+        readByCaregiverAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    EmotionTag:
+      type: string
+      enum: [STABLE, SLIGHTLY_ANXIOUS, UNUSUAL]
+
+    EscalationTriggerType:
+      type: string
+      enum: [FALL_MENTION, PAIN_COMPLAINT, SELF_OR_OTHER_HARM, OTHER_ANOMALY]
+
+    Escalation:
+      type: object
+      required: [id, sessionId, elder, triggerType, source, createdAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        sessionId:
+          type: string
+          format: uuid
+        elder:
+          $ref: "#/components/schemas/ElderSummary"
+        triggerType:
+          $ref: "#/components/schemas/EscalationTriggerType"
+        source:
+          type: string
+          enum: [RULE, LLM]
+          description: RULE은 규칙 필터, LLM은 Claude의 `flag_concern` 도구
+        utteranceText:
+          type: string
+          nullable: true
+          description: 감지된 어르신 발화
+        reason:
+          type: string
+          nullable: true
+          description: LLM이 감지했을 때의 설명
+        createdAt:
+          type: string
+          format: date-time
+        acknowledgedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    FcmTokenRegistration:
+      type: object
+      required: [fcmToken]
+      properties:
+        fcmToken:
+          type: string
+          minLength: 1
+        label:
+          type: string
+          description: 기기 이름 (예 "갤럭시 S25")
+
+    SessionMode:
+      type: string
+      enum: [PICKUP_BRIDGE, COMPANION]
+
+    ActiveSession:
+      type: object
+      required: [id, mode, startedAt]
+      properties:
+        id:
+          type: string
+          format: uuid
+        mode:
+          $ref: "#/components/schemas/SessionMode"
+        startedAt:
+          type: string
+          format: date-time
+
+    TabletContext:
+      type: object
+      required: [deviceId, elder, companionEnabled]
+      properties:
+        deviceId:
+          type: string
+          format: uuid
+        elder:
+          $ref: "#/components/schemas/ElderSummary"
+        preferredTtsVoice:
+          type: string
+          nullable: true
+        companionEnabled:
+          type: boolean
+          description: 말동무 버튼을 보여줄지
+        activeSession:
+          allOf:
+            - $ref: "#/components/schemas/ActiveSession"
+          nullable: true
+
+    OpenerCategory:
+      type: string
+      description: |
+        RECALL 회상·이야기, QUESTION 질문, EMOTION 감정 표현, SHORT_ANSWER 짧은 대답, GREETING 인사,
+        ESCALATION 위급 감지(Claude 호출 없음), FILLER 1번 문장이 늦을 때 트는 추임새
+      enum: [RECALL, QUESTION, EMOTION, SHORT_ANSWER, GREETING, ESCALATION, FILLER]
+
+    OpenerClip:
+      type: object
+      required: [id, category, text, durationMs, audioUrl]
+      properties:
+        id:
+          type: string
+          format: uuid
+        category:
+          $ref: "#/components/schemas/OpenerCategory"
+        text:
+          type: string
+          example: 아이고, 그러셨어요.
+        durationMs:
+          type: integer
+          format: int32
+          minimum: 1
+        audioUrl:
+          type: string
+          description: 음성 파일 경로 (`/tablet/opener-clips/{clipId}/audio`)
+
+    OpenerClipManifest:
+      type: object
+      required: [voice, version, clips]
+      properties:
+        voice:
+          type: string
+        version:
+          type: string
+          description: 목록 내용의 해시. 바뀌면 캐시를 갱신합니다.
+        clips:
+          type: array
+          items:
+            $ref: "#/components/schemas/OpenerClip"
+
+    CompanionSchedule:
+      type: object
+      required: [enabled, checkInTimes, timeZone]
+      properties:
+        enabled:
+          type: boolean
+        checkInTimes:
+          type: array
+          description: 보호자가 정한 안부 대화 시각 (현지 시각 `HH:MM`)
+          items:
+            type: string
+            pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+            example: "15:30"
+        bedtimeStart:
+          type: string
+          nullable: true
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          example: "21:00"
+        bedtimeEnd:
+          type: string
+          nullable: true
+          pattern: "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+          example: "07:00"
+        timeZone:
+          type: string
+          example: Asia/Seoul
+        dailyTokenLimit:
+          type: integer
+          format: int32
+          minimum: 1
+          nullable: true
+          description: 어르신별 하루 토큰 한도. null이면 서버 기본값
+
+    DailyDigest:
+      type: object
+      required: [elderId, date, summaryText, sessionCount, escalationCount, generatedAt]
+      properties:
+        elderId:
+          type: string
+          format: uuid
+        date:
+          type: string
+          format: date
+        summaryText:
+          type: string
+        emotionFlag:
+          type: string
+          nullable: true
+        sessionCount:
+          type: integer
+          format: int32
+          minimum: 0
+        escalationCount:
+          type: integer
+          format: int32
+          minimum: 0
+        generatedAt:
+          type: string
+          format: date-time
+        sentAt:
+          type: string
+          format: date-time
+          nullable: true

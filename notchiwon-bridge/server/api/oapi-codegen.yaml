@@ -1,0 +1,7 @@
+# Go 서버 코드 생성 설정 (make generate)
+package: apigen
+output: internal/apigen/apigen.gen.go
+generate:
+  models: true
+  chi-server: true
+  strict-server: true

@@ -4,6 +4,7 @@ dist/
 
 # Go
 server/bin/
+server/.tools/
 
 # Flutter / Dart
 .dart_tool/
