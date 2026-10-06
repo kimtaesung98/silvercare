@@ -12,8 +12,14 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
+
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/config"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/eta"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/httpapi"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/migrate"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/visit"
 )
 
 func main() {
@@ -35,14 +41,47 @@ func run() error {
 	}
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: level}))
 
-	srv := &http.Server{
-		Addr:              fmt.Sprintf(":%d", cfg.Port),
-		Handler:           httpapi.NewRouter(logger),
-		ReadHeaderTimeout: 10 * time.Second,
-	}
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
+	if err != nil {
+		return fmt.Errorf("open database: %w", err)
+	}
+	defer pool.Close()
+	if err := pool.Ping(ctx); err != nil {
+		return fmt.Errorf("ping database: %w", err)
+	}
+
+	if cfg.MigrateOnStart {
+		applied, err := migrate.Up(ctx, pool)
+		if err != nil {
+			return err
+		}
+		logger.Info("migrations applied", "versions", applied)
+	}
+
+	loc, err := time.LoadLocation(cfg.TimeZone)
+	if err != nil {
+		return err
+	}
+	// The real ETA client (Kakao Mobility / TMAP) replaces eta.Schedule in stage 5,
+	// and the /ws/elder handler becomes the session notifier in stage 3.
+	visits := visit.NewService(pool, eta.Schedule{}, nil, visit.Config{
+		TriggerEtaMinutes: cfg.SessionTriggerEtaMinutes,
+		Location:          loc,
+	}, logger)
+
+	srv := &http.Server{
+		Addr: fmt.Sprintf(":%d", cfg.Port),
+		Handler: httpapi.NewRouter(httpapi.Deps{
+			Pool:   pool,
+			Visits: visits,
+			Tokens: auth.NewTokens(cfg.AuthSecret, cfg.CaregiverTokenTTL),
+			Logger: logger,
+		}),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
 
 	errCh := make(chan error, 1)
 	go func() {

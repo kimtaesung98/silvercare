@@ -182,3 +182,33 @@ func (q *Queries) GetSessionByVisit(ctx context.Context, visitID *uuid.UUID) (Co
 	)
 	return i, err
 }
+
+const preemptCompanionSession = `-- name: PreemptCompanionSession :one
+UPDATE conversation_session
+SET ended_at = now(),
+    ended_reason = 'PREEMPTED'
+WHERE elder_id = $1
+  AND mode = 'COMPANION'
+  AND ended_at IS NULL
+RETURNING id, visit_id, elder_id, mode, started_by, started_at, ended_at, trigger_eta_minutes, overall_emotion_tag, ended_reason, prompt_version
+`
+
+// 픽업 대기 세션을 시작하기 전에 진행 중인 말동무 세션을 끝냅니다. 없으면 행이 없습니다.
+func (q *Queries) PreemptCompanionSession(ctx context.Context, elderID uuid.UUID) (ConversationSession, error) {
+	row := q.db.QueryRow(ctx, preemptCompanionSession, elderID)
+	var i ConversationSession
+	err := row.Scan(
+		&i.ID,
+		&i.VisitID,
+		&i.ElderID,
+		&i.Mode,
+		&i.StartedBy,
+		&i.StartedAt,
+		&i.EndedAt,
+		&i.TriggerEtaMinutes,
+		&i.OverallEmotionTag,
+		&i.EndedReason,
+		&i.PromptVersion,
+	)
+	return i, err
+}

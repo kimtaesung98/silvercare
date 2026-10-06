@@ -23,10 +23,12 @@ type BriefingReport struct {
 }
 
 type Caregiver struct {
-	ID        uuid.UUID `json:"id"`
-	Name      string    `json:"name"`
-	CenterID  uuid.UUID `json:"center_id"`
-	CreatedAt time.Time `json:"created_at"`
+	ID           uuid.UUID `json:"id"`
+	Name         string    `json:"name"`
+	CenterID     uuid.UUID `json:"center_id"`
+	CreatedAt    time.Time `json:"created_at"`
+	LoginID      *string   `json:"login_id"`
+	PasswordHash *string   `json:"password_hash"`
 }
 
 type CaregiverLocation struct {

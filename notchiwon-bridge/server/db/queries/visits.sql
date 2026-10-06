@@ -1,13 +1,26 @@
 -- name: GetVisit :one
 SELECT * FROM visit WHERE id = $1;
 
+-- name: GetVisitDetail :one
+-- API 응답용: 어르신 이름과 픽업 대기 세션 ID를 함께 읽습니다.
+SELECT
+    sqlc.embed(visit),
+    elder.name AS elder_name,
+    conversation_session.id AS session_id
+FROM visit
+JOIN elder ON elder.id = visit.elder_id
+LEFT JOIN conversation_session ON conversation_session.visit_id = visit.id
+WHERE visit.id = $1;
+
 -- name: ListCaregiverVisitsBetween :many
 -- 조무사 앱의 오늘 방문 목록. [from, to) 구간은 호출하는 쪽이 한국 시각 하루로 계산합니다.
 SELECT
     sqlc.embed(visit),
-    elder.name AS elder_name
+    elder.name AS elder_name,
+    conversation_session.id AS session_id
 FROM visit
 JOIN elder ON elder.id = visit.elder_id
+LEFT JOIN conversation_session ON conversation_session.visit_id = visit.id
 WHERE visit.caregiver_id = sqlc.arg(caregiver_id)
   AND visit.scheduled_time >= sqlc.arg(from_time)
   AND visit.scheduled_time < sqlc.arg(to_time)

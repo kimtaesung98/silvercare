@@ -42,6 +42,8 @@ services:
     environment:
       PORT: "8000"
       DATABASE_URL: "postgres://notchiwon:notchiwon_dev_pw@postgres:5432/notchiwon_bridge?sslmode=disable"
+      # 로컬 개발 전용 기본값. 배포에서는 반드시 .env나 비밀값 저장소로 바꿉니다.
+      AUTH_SECRET: "${AUTH_SECRET:-local-dev-only-auth-secret-change-me}"
       REDIS_URL: "redis://redis:6379"
     ports:
       - "8000:8000"

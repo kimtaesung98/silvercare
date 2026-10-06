@@ -157,7 +157,7 @@
           "properties": {
             "sessionId": { "$ref": "#/$defs/uuid" },
             "reason": {
-              "enum": ["CAREGIVER_ARRIVED", "ELDER_DECLINED", "TIMEOUT", "ERROR", "NO_RESPONSE", "BEDTIME", "TOKEN_LIMIT"]
+              "enum": ["CAREGIVER_ARRIVED", "ELDER_DECLINED", "TIMEOUT", "ERROR", "NO_RESPONSE", "BEDTIME", "TOKEN_LIMIT", "PREEMPTED"]
             }
           }
         }

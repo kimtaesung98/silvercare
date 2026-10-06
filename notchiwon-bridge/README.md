@@ -11,6 +11,7 @@
 notchiwon-bridge/
 ├── server/                   # Go API·WebSocket 서버
 │   ├── cmd/api/              # 실행 진입점
+│   ├── cmd/admin/            # 태블릿 토큰·조무사 계정 발급, 데모 데이터
 │   ├── api/                  # 계약: openapi.yaml, ws-events.md (+ JSON 스키마)
 │   ├── db/                   # goose 마이그레이션, sqlc 쿼리
 │   └── internal/             # config, httpapi, db·apigen(생성 코드), 모듈은 단계별로 추가
@@ -56,6 +57,20 @@ TEST_DATABASE_URL="postgres://notchiwon:notchiwon_dev_pw@localhost:5432/notchiwo
 DATABASE_URL="postgres://notchiwon:notchiwon_dev_pw@localhost:5432/notchiwon_bridge?sslmode=disable" make migrate-up
 ```
 
+### 로컬에서 API 써 보기
+
+```bash
+cd server
+export DATABASE_URL="postgres://notchiwon:notchiwon_dev_pw@localhost:5432/notchiwon_bridge?sslmode=disable"
+export AUTH_SECRET="$(openssl rand -base64 48)"
+make run &                                   # 시작하면서 마이그레이션 적용
+go run ./cmd/admin seed-demo                 # 데모 센터·어르신·조무사 계정·30분 뒤 방문·태블릿 토큰 출력
+```
+
+조무사 앱은 `POST /auth/caregiver/login`으로 받은 토큰, 태블릿은 기기 토큰을 `Authorization: Bearer`로 보냅니다.
+실제 계정은 `go run ./cmd/admin set-caregiver-login -caregiver <id> -login <아이디>`(비밀번호는 표준 입력), 태블릿은 `go run ./cmd/admin create-tablet -elder <id>`로 발급합니다.
+지금 ETA는 가짜(방문 예정 시각까지 남은 분)라서 예정 15분 전부터 위치를 보내면 픽업 대기 세션이 시작됩니다.
+
 ### 계약을 바꿀 때
 
 `server/api/openapi.yaml`, `server/db/migrations/`, `server/db/queries/`를 바꾸면 `server/`에서 `make generate`를 돌려 생성 코드를 같은 PR에 커밋합니다.
@@ -89,7 +104,7 @@ PR마다 `.github/workflows/server.yml`(gofmt, go vet, Postgres를 띄운 go tes
 
 ## 다음 단계
 
-[docs/development-process.md](docs/development-process.md)의 단계 1(계약)을 검토한 뒤 단계 2(서버 뼈대)로 넘어갑니다.
+[docs/development-process.md](docs/development-process.md)의 단계 3(대화 엔진, 텍스트)입니다.
 
 ## 참고 문서
 - 기획서: `노치원_AI_브릿지_시스템_기획서.md`
