@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/migrate"
 )
 
@@ -99,4 +100,51 @@ func Seed(t testing.TB, pool *pgxpool.Pool, visitAt time.Time) Fixture {
 		t.Fatalf("seed: %v", err)
 	}
 	return f
+}
+
+// Said is one utterance for Conversation: Elder true for the elder, false for the AI.
+type Said struct {
+	Elder bool
+	Text  string
+}
+
+// Conversation starts the fixture's pickup session, records the lines (one
+// turn each) and, when end is true, ends it as CAREGIVER_ARRIVED.
+func Conversation(t testing.TB, pool *pgxpool.Pool, f Fixture, end bool, lines ...Said) (db.ConversationSession, []db.Utterance) {
+	t.Helper()
+	ctx := context.Background()
+	q := db.New(pool)
+	eta := int32(10)
+	sess, err := q.CreatePickupSession(ctx, db.CreatePickupSessionParams{VisitID: &f.VisitID, ElderID: f.ElderID, TriggerEtaMinutes: &eta})
+	if err != nil {
+		t.Fatalf("create session: %v", err)
+	}
+	utts := make([]db.Utterance, len(lines))
+	for i, l := range lines {
+		speaker, chunk := "AI", int32(1)
+		if l.Elder {
+			speaker, chunk = "ELDER", 0
+		}
+		utts[i], err = q.CreateUtterance(ctx, db.CreateUtteranceParams{SessionID: sess.ID, Seq: int32(i), ChunkIndex: chunk, Speaker: speaker, Text: l.Text})
+		if err != nil {
+			t.Fatalf("create utterance: %v", err)
+		}
+	}
+	if end {
+		reason := "CAREGIVER_ARRIVED"
+		if sess, err = q.EndSession(ctx, db.EndSessionParams{ID: sess.ID, EndedReason: &reason}); err != nil {
+			t.Fatalf("end session: %v", err)
+		}
+	}
+	return sess, utts
+}
+
+// Phone registers a caregiver phone for push alerts.
+func Phone(t testing.TB, pool *pgxpool.Pool, caregiverID uuid.UUID, fcmToken string) db.Device {
+	t.Helper()
+	d, err := db.New(pool).RegisterCaregiverPhone(context.Background(), db.RegisterCaregiverPhoneParams{CaregiverID: &caregiverID, FcmToken: &fcmToken})
+	if err != nil {
+		t.Fatalf("register phone: %v", err)
+	}
+	return d
 }

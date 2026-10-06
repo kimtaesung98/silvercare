@@ -1,6 +1,6 @@
 // Package eta estimates how many minutes a caregiver needs to reach an elder.
-// The real Kakao Mobility / TMAP client arrives in stage 5; until then
-// Schedule stands in for it.
+// Kakao is the real estimator (Kakao Mobility directions); Schedule stands in
+// when no API key is set or the elder's home is not registered.
 package eta
 
 import (
@@ -15,6 +15,14 @@ type Request struct {
 	Longitude     float64
 	RecordedAt    time.Time
 	ScheduledTime time.Time
+	// Destination is the elder's home, nil when it is not registered.
+	Destination *Point
+}
+
+// Point is a WGS84 coordinate.
+type Point struct {
+	Latitude  float64
+	Longitude float64
 }
 
 // Estimator returns the caregiver's remaining travel time in whole minutes.
@@ -34,9 +42,13 @@ func (s Schedule) Minutes(_ context.Context, r Request) (int, error) {
 	if s.Now != nil {
 		now = s.Now
 	}
-	left := r.ScheduledTime.Sub(now()).Minutes()
-	if left <= 0 {
-		return 0, nil
+	return ceilMinutes(r.ScheduledTime.Sub(now())), nil
+}
+
+// ceilMinutes rounds d up to whole minutes, never below zero.
+func ceilMinutes(d time.Duration) int {
+	if d <= 0 {
+		return 0
 	}
-	return int(math.Ceil(left)), nil
+	return int(math.Ceil(d.Minutes()))
 }

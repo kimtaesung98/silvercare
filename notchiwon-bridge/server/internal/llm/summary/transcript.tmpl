@@ -1,0 +1,12 @@
+어르신: {{.ElderName}}
+{{- if .Escalations}}
+위급 감지 기록:
+{{- range .Escalations}}
+- {{.}}
+{{- end}}
+{{- end}}
+
+대화:
+{{- range .Lines}}
+{{.}}
+{{- end}}

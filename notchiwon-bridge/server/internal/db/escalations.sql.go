@@ -7,6 +7,7 @@ package db
 
 import (
 	"context"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -92,6 +93,58 @@ func (q *Queries) CreateEscalationEvent(ctx context.Context, arg CreateEscalatio
 	return i, err
 }
 
+const getEscalationDetail = `-- name: GetEscalationDetail :one
+SELECT
+    escalation_event.id, escalation_event.session_id, escalation_event.utterance_id, escalation_event.trigger_type, escalation_event.source, escalation_event.rule_id, escalation_event.reason, escalation_event.notified_targets, escalation_event.created_at, escalation_event.acknowledged_at, escalation_event.acknowledged_by_caregiver_id, escalation_event.resolved_at,
+    elder.id AS elder_id,
+    elder.name AS elder_name,
+    utterance.text AS utterance_text,
+    visit.id AS visit_id,
+    visit.caregiver_id AS caregiver_id
+FROM escalation_event
+JOIN conversation_session ON conversation_session.id = escalation_event.session_id
+JOIN elder ON elder.id = conversation_session.elder_id
+LEFT JOIN utterance ON utterance.id = escalation_event.utterance_id
+LEFT JOIN visit ON visit.id = conversation_session.visit_id
+WHERE escalation_event.id = $1
+`
+
+type GetEscalationDetailRow struct {
+	EscalationEvent EscalationEvent `json:"escalation_event"`
+	ElderID         uuid.UUID       `json:"elder_id"`
+	ElderName       string          `json:"elder_name"`
+	UtteranceText   *string         `json:"utterance_text"`
+	VisitID         *uuid.UUID      `json:"visit_id"`
+	CaregiverID     *uuid.UUID      `json:"caregiver_id"`
+}
+
+// 조무사 앱 화면용: 어르신 이름, 감지된 발화, 방문(누구의 방문인지 확인용)을 함께 읽습니다.
+// 말동무 세션의 위급은 방문이 없으므로 visit 열이 NULL입니다.
+func (q *Queries) GetEscalationDetail(ctx context.Context, id uuid.UUID) (GetEscalationDetailRow, error) {
+	row := q.db.QueryRow(ctx, getEscalationDetail, id)
+	var i GetEscalationDetailRow
+	err := row.Scan(
+		&i.EscalationEvent.ID,
+		&i.EscalationEvent.SessionID,
+		&i.EscalationEvent.UtteranceID,
+		&i.EscalationEvent.TriggerType,
+		&i.EscalationEvent.Source,
+		&i.EscalationEvent.RuleID,
+		&i.EscalationEvent.Reason,
+		&i.EscalationEvent.NotifiedTargets,
+		&i.EscalationEvent.CreatedAt,
+		&i.EscalationEvent.AcknowledgedAt,
+		&i.EscalationEvent.AcknowledgedByCaregiverID,
+		&i.EscalationEvent.ResolvedAt,
+		&i.ElderID,
+		&i.ElderName,
+		&i.UtteranceText,
+		&i.VisitID,
+		&i.CaregiverID,
+	)
+	return i, err
+}
+
 const getEscalationEvent = `-- name: GetEscalationEvent :one
 SELECT id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at FROM escalation_event WHERE id = $1
 `
@@ -114,4 +167,128 @@ func (q *Queries) GetEscalationEvent(ctx context.Context, id uuid.UUID) (Escalat
 		&i.ResolvedAt,
 	)
 	return i, err
+}
+
+const listOpenEscalationsForCaregiver = `-- name: ListOpenEscalationsForCaregiver :many
+SELECT
+    escalation_event.id, escalation_event.session_id, escalation_event.utterance_id, escalation_event.trigger_type, escalation_event.source, escalation_event.rule_id, escalation_event.reason, escalation_event.notified_targets, escalation_event.created_at, escalation_event.acknowledged_at, escalation_event.acknowledged_by_caregiver_id, escalation_event.resolved_at,
+    elder.id AS elder_id,
+    elder.name AS elder_name,
+    utterance.text AS utterance_text,
+    visit.id AS visit_id,
+    visit.caregiver_id AS caregiver_id
+FROM escalation_event
+JOIN conversation_session ON conversation_session.id = escalation_event.session_id
+JOIN elder ON elder.id = conversation_session.elder_id
+JOIN visit ON visit.id = conversation_session.visit_id
+LEFT JOIN utterance ON utterance.id = escalation_event.utterance_id
+WHERE visit.caregiver_id = $1
+  AND escalation_event.acknowledged_at IS NULL
+  AND escalation_event.created_at >= $2
+ORDER BY escalation_event.created_at DESC
+`
+
+type ListOpenEscalationsForCaregiverParams struct {
+	CaregiverID uuid.UUID `json:"caregiver_id"`
+	Since       time.Time `json:"since"`
+}
+
+type ListOpenEscalationsForCaregiverRow struct {
+	EscalationEvent EscalationEvent `json:"escalation_event"`
+	ElderID         uuid.UUID       `json:"elder_id"`
+	ElderName       string          `json:"elder_name"`
+	UtteranceText   *string         `json:"utterance_text"`
+	VisitID         uuid.UUID       `json:"visit_id"`
+	CaregiverID     uuid.UUID       `json:"caregiver_id"`
+}
+
+// 아직 확인하지 않은 위급. 푸시를 놓쳤을 때 앱이 첫 화면에서 다시 보여줍니다.
+func (q *Queries) ListOpenEscalationsForCaregiver(ctx context.Context, arg ListOpenEscalationsForCaregiverParams) ([]ListOpenEscalationsForCaregiverRow, error) {
+	rows, err := q.db.Query(ctx, listOpenEscalationsForCaregiver, arg.CaregiverID, arg.Since)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOpenEscalationsForCaregiverRow{}
+	for rows.Next() {
+		var i ListOpenEscalationsForCaregiverRow
+		if err := rows.Scan(
+			&i.EscalationEvent.ID,
+			&i.EscalationEvent.SessionID,
+			&i.EscalationEvent.UtteranceID,
+			&i.EscalationEvent.TriggerType,
+			&i.EscalationEvent.Source,
+			&i.EscalationEvent.RuleID,
+			&i.EscalationEvent.Reason,
+			&i.EscalationEvent.NotifiedTargets,
+			&i.EscalationEvent.CreatedAt,
+			&i.EscalationEvent.AcknowledgedAt,
+			&i.EscalationEvent.AcknowledgedByCaregiverID,
+			&i.EscalationEvent.ResolvedAt,
+			&i.ElderID,
+			&i.ElderName,
+			&i.UtteranceText,
+			&i.VisitID,
+			&i.CaregiverID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listSessionEscalations = `-- name: ListSessionEscalations :many
+SELECT id, session_id, utterance_id, trigger_type, source, rule_id, reason, notified_targets, created_at, acknowledged_at, acknowledged_by_caregiver_id, resolved_at FROM escalation_event WHERE session_id = $1 ORDER BY created_at
+`
+
+func (q *Queries) ListSessionEscalations(ctx context.Context, sessionID uuid.UUID) ([]EscalationEvent, error) {
+	rows, err := q.db.Query(ctx, listSessionEscalations, sessionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []EscalationEvent{}
+	for rows.Next() {
+		var i EscalationEvent
+		if err := rows.Scan(
+			&i.ID,
+			&i.SessionID,
+			&i.UtteranceID,
+			&i.TriggerType,
+			&i.Source,
+			&i.RuleID,
+			&i.Reason,
+			&i.NotifiedTargets,
+			&i.CreatedAt,
+			&i.AcknowledgedAt,
+			&i.AcknowledgedByCaregiverID,
+			&i.ResolvedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const setEscalationNotified = `-- name: SetEscalationNotified :exec
+UPDATE escalation_event SET notified_targets = $1 WHERE id = $2
+`
+
+type SetEscalationNotifiedParams struct {
+	NotifiedTargets []byte    `json:"notified_targets"`
+	ID              uuid.UUID `json:"id"`
+}
+
+// 알림을 보낸 대상(기기 ID 목록)을 남깁니다.
+func (q *Queries) SetEscalationNotified(ctx context.Context, arg SetEscalationNotifiedParams) error {
+	_, err := q.db.Exec(ctx, setEscalationNotified, arg.NotifiedTargets, arg.ID)
+	return err
 }

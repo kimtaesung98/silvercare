@@ -65,6 +65,47 @@ func (q *Queries) GetActiveDeviceByTokenHash(ctx context.Context, tokenHash []by
 	return i, err
 }
 
+const listCaregiverPhones = `-- name: ListCaregiverPhones :many
+SELECT id, kind, elder_id, caregiver_id, guardian_id, label, token_hash, fcm_token, last_seen_at, revoked_at, created_at FROM device
+WHERE kind = 'CAREGIVER_PHONE'
+  AND caregiver_id = $1
+  AND revoked_at IS NULL
+  AND fcm_token IS NOT NULL
+`
+
+// 위급 알림을 보낼 조무사 휴대폰들.
+func (q *Queries) ListCaregiverPhones(ctx context.Context, caregiverID *uuid.UUID) ([]Device, error) {
+	rows, err := q.db.Query(ctx, listCaregiverPhones, caregiverID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []Device{}
+	for rows.Next() {
+		var i Device
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.ElderID,
+			&i.CaregiverID,
+			&i.GuardianID,
+			&i.Label,
+			&i.TokenHash,
+			&i.FcmToken,
+			&i.LastSeenAt,
+			&i.RevokedAt,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const registerCaregiverPhone = `-- name: RegisterCaregiverPhone :one
 INSERT INTO device (kind, caregiver_id, fcm_token, label)
 VALUES ('CAREGIVER_PHONE', $1, $2, $3)
@@ -99,6 +140,16 @@ func (q *Queries) RegisterCaregiverPhone(ctx context.Context, arg RegisterCaregi
 		&i.CreatedAt,
 	)
 	return i, err
+}
+
+const revokeDeviceByFcmToken = `-- name: RevokeDeviceByFcmToken :exec
+UPDATE device SET revoked_at = now() WHERE fcm_token = $1 AND revoked_at IS NULL
+`
+
+// FCM이 등록되지 않은 토큰이라고 답하면 다시 보내지 않습니다.
+func (q *Queries) RevokeDeviceByFcmToken(ctx context.Context, fcmToken *string) error {
+	_, err := q.db.Exec(ctx, revokeDeviceByFcmToken, fcmToken)
+	return err
 }
 
 const touchDevice = `-- name: TouchDevice :exec

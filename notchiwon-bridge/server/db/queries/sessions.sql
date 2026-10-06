@@ -36,3 +36,17 @@ WHERE elder_id = $1
   AND mode = 'COMPANION'
   AND ended_at IS NULL
 RETURNING *;
+
+-- name: SetSessionEmotionTag :exec
+UPDATE conversation_session SET overall_emotion_tag = sqlc.arg(tag) WHERE id = sqlc.arg(id);
+
+-- name: GetSessionOwner :one
+-- 세션의 어르신과, 픽업 세션이면 그 방문의 조무사.
+SELECT
+    sqlc.embed(conversation_session),
+    elder.name AS elder_name,
+    visit.caregiver_id AS caregiver_id
+FROM conversation_session
+JOIN elder ON elder.id = conversation_session.elder_id
+LEFT JOIN visit ON visit.id = conversation_session.visit_id
+WHERE conversation_session.id = $1;

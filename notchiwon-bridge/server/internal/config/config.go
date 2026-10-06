@@ -32,6 +32,16 @@ type Config struct {
 	// with the fallback sentence.
 	AnthropicAPIKey   string `env:"ANTHROPIC_API_KEY"`
 	ConversationModel string `env:"CLAUDE_CONVERSATION_MODEL" envDefault:"claude-sonnet-5-5"`
+	// SummaryModel writes arrival briefings and extracts keywords.
+	SummaryModel string `env:"CLAUDE_SUMMARY_MODEL" envDefault:"claude-haiku-4-5"`
+
+	// KakaoMobilityAPIKey is the Kakao REST API key for car directions (ETA).
+	// Without it the ETA is the time left until the visit's scheduled time.
+	KakaoMobilityAPIKey string `env:"KAKAO_MOBILITY_API_KEY"`
+
+	// FCMCredentialsFile is the path of a Firebase service account key (JSON)
+	// for escalation pushes. Without it escalations are only listed in the app.
+	FCMCredentialsFile string `env:"FCM_CREDENTIALS_FILE"`
 
 	// Conversation timings (internal/session.Config).
 	FillerAfter          time.Duration `env:"CONVERSATION_FILLER_AFTER" envDefault:"2s"`

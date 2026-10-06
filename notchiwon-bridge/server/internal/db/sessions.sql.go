@@ -183,6 +183,45 @@ func (q *Queries) GetSessionByVisit(ctx context.Context, visitID *uuid.UUID) (Co
 	return i, err
 }
 
+const getSessionOwner = `-- name: GetSessionOwner :one
+SELECT
+    conversation_session.id, conversation_session.visit_id, conversation_session.elder_id, conversation_session.mode, conversation_session.started_by, conversation_session.started_at, conversation_session.ended_at, conversation_session.trigger_eta_minutes, conversation_session.overall_emotion_tag, conversation_session.ended_reason, conversation_session.prompt_version,
+    elder.name AS elder_name,
+    visit.caregiver_id AS caregiver_id
+FROM conversation_session
+JOIN elder ON elder.id = conversation_session.elder_id
+LEFT JOIN visit ON visit.id = conversation_session.visit_id
+WHERE conversation_session.id = $1
+`
+
+type GetSessionOwnerRow struct {
+	ConversationSession ConversationSession `json:"conversation_session"`
+	ElderName           string              `json:"elder_name"`
+	CaregiverID         *uuid.UUID          `json:"caregiver_id"`
+}
+
+// 세션의 어르신과, 픽업 세션이면 그 방문의 조무사.
+func (q *Queries) GetSessionOwner(ctx context.Context, id uuid.UUID) (GetSessionOwnerRow, error) {
+	row := q.db.QueryRow(ctx, getSessionOwner, id)
+	var i GetSessionOwnerRow
+	err := row.Scan(
+		&i.ConversationSession.ID,
+		&i.ConversationSession.VisitID,
+		&i.ConversationSession.ElderID,
+		&i.ConversationSession.Mode,
+		&i.ConversationSession.StartedBy,
+		&i.ConversationSession.StartedAt,
+		&i.ConversationSession.EndedAt,
+		&i.ConversationSession.TriggerEtaMinutes,
+		&i.ConversationSession.OverallEmotionTag,
+		&i.ConversationSession.EndedReason,
+		&i.ConversationSession.PromptVersion,
+		&i.ElderName,
+		&i.CaregiverID,
+	)
+	return i, err
+}
+
 const preemptCompanionSession = `-- name: PreemptCompanionSession :one
 UPDATE conversation_session
 SET ended_at = now(),
@@ -211,4 +250,18 @@ func (q *Queries) PreemptCompanionSession(ctx context.Context, elderID uuid.UUID
 		&i.PromptVersion,
 	)
 	return i, err
+}
+
+const setSessionEmotionTag = `-- name: SetSessionEmotionTag :exec
+UPDATE conversation_session SET overall_emotion_tag = $1 WHERE id = $2
+`
+
+type SetSessionEmotionTagParams struct {
+	Tag *string   `json:"tag"`
+	ID  uuid.UUID `json:"id"`
+}
+
+func (q *Queries) SetSessionEmotionTag(ctx context.Context, arg SetSessionEmotionTagParams) error {
+	_, err := q.db.Exec(ctx, setSessionEmotionTag, arg.Tag, arg.ID)
+	return err
 }

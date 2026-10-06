@@ -203,6 +203,22 @@ paths:
         "404":
           $ref: "#/components/responses/NotFound"
 
+  /escalations/open:
+    get:
+      tags: [escalations]
+      operationId: listOpenEscalations
+      summary: 확인하지 않은 위급 이벤트 (최근 24시간, 로그인한 조무사의 방문)
+      description: 푸시를 놓쳤을 때를 대비해 앱 첫 화면이 다시 보여줍니다. 최근 것이 먼저입니다.
+      responses:
+        "200":
+          description: 위급 이벤트 목록
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EscalationList"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
   /escalations/{escalationId}:
     parameters:
       - $ref: "#/components/parameters/EscalationId"
@@ -550,6 +566,25 @@ components:
           format: uuid
           nullable: true
           description: 픽업 대기 세션이 시작됐으면 그 ID
+        destination:
+          allOf:
+            - $ref: "#/components/schemas/Place"
+          nullable: true
+          description: 어르신 댁 (등록되지 않았으면 null)
+
+    Place:
+      type: object
+      required: [latitude, longitude]
+      properties:
+        latitude:
+          type: number
+          format: double
+        longitude:
+          type: number
+          format: double
+        address:
+          type: string
+          nullable: true
 
     VisitList:
       type: object
@@ -677,6 +712,20 @@ components:
           type: string
           format: date-time
           nullable: true
+        visitId:
+          type: string
+          format: uuid
+          nullable: true
+          description: 픽업 대기 중이었으면 그 방문 (말동무 세션이면 null)
+
+    EscalationList:
+      type: object
+      required: [escalations]
+      properties:
+        escalations:
+          type: array
+          items:
+            $ref: "#/components/schemas/Escalation"
 
     FcmTokenRegistration:
       type: object

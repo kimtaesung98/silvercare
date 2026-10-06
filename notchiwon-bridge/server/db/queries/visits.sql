@@ -2,10 +2,13 @@
 SELECT * FROM visit WHERE id = $1;
 
 -- name: GetVisitDetail :one
--- API 응답용: 어르신 이름과 픽업 대기 세션 ID를 함께 읽습니다.
+-- API 응답용: 어르신 이름·댁 위치와 픽업 대기 세션 ID를 함께 읽습니다.
 SELECT
     sqlc.embed(visit),
     elder.name AS elder_name,
+    elder.home_address,
+    elder.home_latitude,
+    elder.home_longitude,
     conversation_session.id AS session_id
 FROM visit
 JOIN elder ON elder.id = visit.elder_id
@@ -17,6 +20,9 @@ WHERE visit.id = $1;
 SELECT
     sqlc.embed(visit),
     elder.name AS elder_name,
+    elder.home_address,
+    elder.home_latitude,
+    elder.home_longitude,
     conversation_session.id AS session_id
 FROM visit
 JOIN elder ON elder.id = visit.elder_id

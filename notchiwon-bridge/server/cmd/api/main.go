@@ -13,14 +13,18 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/riverqueue/river"
 
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/briefing"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/config"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/eta"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/httpapi"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/jobs"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/llm"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/migrate"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/notify"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/session"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/speech"
@@ -70,11 +74,15 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	var claude llm.Client = llm.Unavailable{}
+	var (
+		claude     llm.Client     = llm.Unavailable{}
+		summarizer llm.Summarizer = llm.Unavailable{}
+	)
 	if cfg.AnthropicAPIKey != "" {
 		claude = llm.NewAnthropic(cfg.AnthropicAPIKey, cfg.ConversationModel)
+		summarizer = llm.NewAnthropicSummarizer(llm.NewAnthropic(cfg.AnthropicAPIKey, cfg.SummaryModel))
 	} else {
-		logger.Warn("ANTHROPIC_API_KEY is empty: every turn ends with the fallback sentence")
+		logger.Warn("ANTHROPIC_API_KEY is empty: every turn ends with the fallback sentence, briefings quote the elder")
 	}
 	q := db.New(pool)
 	openers := opener.NewLibrary(q)
@@ -100,8 +108,41 @@ func run() error {
 	}
 	logger.Info("conversation engine ready", "model", cfg.ConversationModel, "prompt_version", llm.PromptVersion)
 
-	// The real ETA client (Kakao Mobility / TMAP) replaces eta.Schedule in stage 5.
-	visits := visit.NewService(pool, eta.Schedule{}, hub, visit.Config{
+	// Background jobs: escalation pushes and arrival briefings.
+	var sender notify.Sender = notify.Unavailable{}
+	if cfg.FCMCredentialsFile != "" {
+		key, err := os.ReadFile(cfg.FCMCredentialsFile)
+		if err != nil {
+			return fmt.Errorf("read FCM_CREDENTIALS_FILE: %w", err)
+		}
+		fcm, err := notify.NewFCM(ctx, key)
+		if err != nil {
+			return err
+		}
+		sender = fcm
+	} else {
+		logger.Warn("FCM_CREDENTIALS_FILE is empty: escalations are not pushed, only listed in the caregiver app")
+	}
+	workers := river.NewWorkers()
+	river.AddWorker(workers, &notify.EscalationWorker{Queries: q, Sender: sender, Logger: logger})
+	river.AddWorker(workers, &briefing.Worker{Pool: pool, Summarizer: summarizer, Logger: logger})
+	queue, err := jobs.NewClient(pool, workers, logger)
+	if err != nil {
+		return err
+	}
+	if err := queue.Start(ctx); err != nil {
+		return fmt.Errorf("start job queue: %w", err)
+	}
+	enqueuer := jobs.Enqueuer{Client: queue, Logger: logger}
+	engine.SetAlerter(enqueuer)
+
+	var estimator eta.Estimator = eta.Schedule{}
+	if cfg.KakaoMobilityAPIKey != "" {
+		estimator = eta.Kakao{APIKey: cfg.KakaoMobilityAPIKey, Logger: logger}
+	} else {
+		logger.Warn("KAKAO_MOBILITY_API_KEY is empty: ETA is the time left until the scheduled visit")
+	}
+	visits := visit.NewService(pool, estimator, visit.Notifiers{hub, enqueuer}, visit.Config{
 		TriggerEtaMinutes: cfg.SessionTriggerEtaMinutes,
 		Location:          loc,
 		PromptVersion:     llm.PromptVersion,
@@ -139,5 +180,10 @@ func run() error {
 	logger.Info("shutting down")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return srv.Shutdown(shutdownCtx)
+	err = srv.Shutdown(shutdownCtx)
+	// Let running jobs finish; unfinished ones are picked up on the next start.
+	if qerr := queue.Stop(shutdownCtx); qerr != nil {
+		logger.Error("stop job queue", "err", qerr)
+	}
+	return err
 }

@@ -153,8 +153,10 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
 		err := tx.QueryRow(ctx, `
 			WITH g AS (INSERT INTO guardian (name, phone) VALUES ('데모 보호자', '010-0000-0000') RETURNING id),
 			     c AS (INSERT INTO daycare_center (name) VALUES ('데모 주간보호센터') RETURNING id),
-			     e AS (INSERT INTO elder (name, birth_date, dementia_stage, guardian_id, center_id)
-			           SELECT '김순자', '1940-03-01', 'MILD', g.id, c.id FROM g, c RETURNING id, center_id),
+			     e AS (INSERT INTO elder (name, birth_date, dementia_stage, guardian_id, center_id,
+			                              home_address, home_latitude, home_longitude)
+			           SELECT '김순자', '1940-03-01', 'MILD', g.id, c.id,
+			                  '서울 종로구 세종대로 175', 37.5725, 126.9769 FROM g, c RETURNING id, center_id),
 			     cg AS (INSERT INTO caregiver (name, center_id) SELECT '이조무', e.center_id FROM e RETURNING id),
 			     v AS (INSERT INTO visit (elder_id, caregiver_id, scheduled_time)
 			           SELECT e.id, cg.id, $1 FROM e, cg RETURNING id)

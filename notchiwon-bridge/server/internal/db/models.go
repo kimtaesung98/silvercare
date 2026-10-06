@@ -114,6 +114,9 @@ type Elder struct {
 	CenterID          uuid.UUID   `json:"center_id"`
 	CreatedAt         time.Time   `json:"created_at"`
 	UpdatedAt         time.Time   `json:"updated_at"`
+	HomeAddress       *string     `json:"home_address"`
+	HomeLatitude      *float64    `json:"home_latitude"`
+	HomeLongitude     *float64    `json:"home_longitude"`
 }
 
 type EscalationEvent struct {

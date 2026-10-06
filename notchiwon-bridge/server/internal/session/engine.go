@@ -97,6 +97,16 @@ type TurnResult struct {
 	Outcome   Outcome
 }
 
+// Alerter hears about every escalation event the engine records, so the
+// people who must act are told (internal/jobs queues the push).
+type Alerter interface {
+	EscalationRaised(ctx context.Context, ev db.EscalationEvent)
+}
+
+type nopAlerter struct{}
+
+func (nopAlerter) EscalationRaised(context.Context, db.EscalationEvent) {}
+
 // Engine runs conversation turns.
 type Engine struct {
 	q       *db.Queries
@@ -104,6 +114,7 @@ type Engine struct {
 	openers *opener.Library
 	cfg     Config
 	logger  *slog.Logger
+	alerter Alerter
 
 	mu       sync.Mutex
 	sessions map[uuid.UUID]*sessionState
@@ -123,8 +134,12 @@ type sessionState struct {
 
 // NewEngine returns an Engine.
 func NewEngine(q *db.Queries, client llm.Client, openers *opener.Library, cfg Config, logger *slog.Logger) *Engine {
-	return &Engine{q: q, llm: client, openers: openers, cfg: cfg, logger: logger, sessions: map[uuid.UUID]*sessionState{}}
+	return &Engine{q: q, llm: client, openers: openers, cfg: cfg, logger: logger, alerter: nopAlerter{},
+		sessions: map[uuid.UUID]*sessionState{}}
 }
+
+// SetAlerter sets who hears about escalation events. Call it before serving.
+func (e *Engine) SetAlerter(a Alerter) { e.alerter = a }
 
 func (e *Engine) state(sessionID uuid.UUID) *sessionState {
 	e.mu.Lock()
@@ -258,11 +273,13 @@ func (e *Engine) HandleElderText(ctx context.Context, sessionID uuid.UUID, text 
 
 	if flagged {
 		res.Escalated, res.Trigger = true, &match.Type
-		if _, err := escalation.FromRule(wctx, e.q, sessionID, elderUtt.ID, match); err != nil {
+		if ev, err := escalation.FromRule(wctx, e.q, sessionID, elderUtt.ID, match); err != nil {
 			// The elder still hears the reassurance; the missing event is an
 			// alert for us (spec section 5, decided in stage 3).
 			e.logger.ErrorContext(ctx, "save escalation event failed",
 				"session_id", sessionID, "utterance_id", elderUtt.ID, "rule_id", match.RuleID, "err", err)
+		} else {
+			e.alerter.EscalationRaised(wctx, ev)
 		}
 		e.logger.WarnContext(ctx, "escalation", "session_id", sessionID, "rule_id", match.RuleID, "type", match.Type)
 		if err := t.reassure(manifest); err != nil {
@@ -299,10 +316,12 @@ func (e *Engine) HandleElderText(ctx context.Context, sessionID uuid.UUID, text 
 		return res, err
 	}
 	for _, c := range concerns {
-		if _, err := escalation.FromLLM(wctx, e.q, sessionID, elderUtt.ID, escalation.TriggerType(c.Type), c.Reason); err != nil {
+		ev, err := escalation.FromLLM(wctx, e.q, sessionID, elderUtt.ID, escalation.TriggerType(c.Type), c.Reason)
+		if err != nil {
 			e.logger.ErrorContext(ctx, "save llm escalation event failed", "session_id", sessionID, "err", err)
 			continue
 		}
+		e.alerter.EscalationRaised(wctx, ev)
 		e.logger.WarnContext(ctx, "llm concern", "session_id", sessionID, "type", c.Type, "reason", c.Reason)
 	}
 	return t.result(res, outcome), nil

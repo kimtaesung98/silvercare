@@ -31,6 +31,42 @@ func (q *Queries) GetBriefingBySession(ctx context.Context, sessionID uuid.UUID)
 	return i, err
 }
 
+const getBriefingDetail = `-- name: GetBriefingDetail :one
+SELECT
+    briefing_report.id, briefing_report.session_id, briefing_report.summary_text, briefing_report.top_keywords, briefing_report.emotion_flag, briefing_report.model, briefing_report.generated_at, briefing_report.read_by_caregiver_at,
+    conversation_session.overall_emotion_tag,
+    (SELECT count(*) FROM escalation_event WHERE escalation_event.session_id = briefing_report.session_id)::integer
+        AS escalation_count
+FROM briefing_report
+JOIN conversation_session ON conversation_session.id = briefing_report.session_id
+WHERE briefing_report.session_id = $1
+`
+
+type GetBriefingDetailRow struct {
+	BriefingReport    BriefingReport `json:"briefing_report"`
+	OverallEmotionTag *string        `json:"overall_emotion_tag"`
+	EscalationCount   int32          `json:"escalation_count"`
+}
+
+// 브리핑 카드용: 세션의 감정 태그와 위급 횟수를 함께 읽습니다.
+func (q *Queries) GetBriefingDetail(ctx context.Context, sessionID uuid.UUID) (GetBriefingDetailRow, error) {
+	row := q.db.QueryRow(ctx, getBriefingDetail, sessionID)
+	var i GetBriefingDetailRow
+	err := row.Scan(
+		&i.BriefingReport.ID,
+		&i.BriefingReport.SessionID,
+		&i.BriefingReport.SummaryText,
+		&i.BriefingReport.TopKeywords,
+		&i.BriefingReport.EmotionFlag,
+		&i.BriefingReport.Model,
+		&i.BriefingReport.GeneratedAt,
+		&i.BriefingReport.ReadByCaregiverAt,
+		&i.OverallEmotionTag,
+		&i.EscalationCount,
+	)
+	return i, err
+}
+
 const markBriefingRead = `-- name: MarkBriefingRead :one
 UPDATE briefing_report
 SET read_by_caregiver_at = COALESCE(read_by_caregiver_at, now())
@@ -40,6 +76,49 @@ RETURNING id, session_id, summary_text, top_keywords, emotion_flag, model, gener
 
 func (q *Queries) MarkBriefingRead(ctx context.Context, sessionID uuid.UUID) (BriefingReport, error) {
 	row := q.db.QueryRow(ctx, markBriefingRead, sessionID)
+	var i BriefingReport
+	err := row.Scan(
+		&i.ID,
+		&i.SessionID,
+		&i.SummaryText,
+		&i.TopKeywords,
+		&i.EmotionFlag,
+		&i.Model,
+		&i.GeneratedAt,
+		&i.ReadByCaregiverAt,
+	)
+	return i, err
+}
+
+const upsertBriefing = `-- name: UpsertBriefing :one
+INSERT INTO briefing_report (session_id, summary_text, top_keywords, emotion_flag, model)
+VALUES ($1, $2, $3, $4, $5)
+ON CONFLICT (session_id) DO UPDATE
+SET summary_text = EXCLUDED.summary_text,
+    top_keywords = EXCLUDED.top_keywords,
+    emotion_flag = EXCLUDED.emotion_flag,
+    model = EXCLUDED.model,
+    generated_at = now()
+RETURNING id, session_id, summary_text, top_keywords, emotion_flag, model, generated_at, read_by_caregiver_at
+`
+
+type UpsertBriefingParams struct {
+	SessionID   uuid.UUID `json:"session_id"`
+	SummaryText string    `json:"summary_text"`
+	TopKeywords []byte    `json:"top_keywords"`
+	EmotionFlag *string   `json:"emotion_flag"`
+	Model       *string   `json:"model"`
+}
+
+// 작업이 다시 돌아도(재시도) 브리핑은 세션당 하나입니다.
+func (q *Queries) UpsertBriefing(ctx context.Context, arg UpsertBriefingParams) (BriefingReport, error) {
+	row := q.db.QueryRow(ctx, upsertBriefing,
+		arg.SessionID,
+		arg.SummaryText,
+		arg.TopKeywords,
+		arg.EmotionFlag,
+		arg.Model,
+	)
 	var i BriefingReport
 	err := row.Scan(
 		&i.ID,

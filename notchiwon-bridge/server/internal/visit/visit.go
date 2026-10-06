@@ -42,11 +42,51 @@ type SessionNotifier interface {
 	EtaUpdated(ctx context.Context, s db.ConversationSession, etaMinutes int)
 }
 
+// Notifiers fans one event out to several SessionNotifiers, in order.
+type Notifiers []SessionNotifier
+
+// SessionStarted implements SessionNotifier.
+func (n Notifiers) SessionStarted(ctx context.Context, s db.ConversationSession, etaMinutes int) {
+	for _, x := range n {
+		x.SessionStarted(ctx, s, etaMinutes)
+	}
+}
+
+// SessionEnded implements SessionNotifier.
+func (n Notifiers) SessionEnded(ctx context.Context, s db.ConversationSession) {
+	for _, x := range n {
+		x.SessionEnded(ctx, s)
+	}
+}
+
+// EtaUpdated implements SessionNotifier.
+func (n Notifiers) EtaUpdated(ctx context.Context, s db.ConversationSession, etaMinutes int) {
+	for _, x := range n {
+		x.EtaUpdated(ctx, s, etaMinutes)
+	}
+}
+
 // Detail is a visit with the fields the caregiver app shows.
 type Detail struct {
 	Visit     db.Visit
 	ElderName string
 	SessionID *uuid.UUID
+	// Home is the elder's home, nil when it is not registered.
+	Home *Home
+}
+
+// Home is where the caregiver drives to.
+type Home struct {
+	Address   *string
+	Latitude  float64
+	Longitude float64
+}
+
+func home(address *string, lat, lng *float64) *Home {
+	if lat == nil || lng == nil {
+		return nil
+	}
+	return &Home{Address: address, Latitude: *lat, Longitude: *lng}
 }
 
 // Location is one caregiver position.
@@ -110,7 +150,8 @@ func (s *Service) ListToday(ctx context.Context, caregiverID uuid.UUID) ([]Detai
 	}
 	out := make([]Detail, len(rows))
 	for i, r := range rows {
-		out[i] = Detail{Visit: r.Visit, ElderName: r.ElderName, SessionID: r.SessionID}
+		out[i] = Detail{Visit: r.Visit, ElderName: r.ElderName, SessionID: r.SessionID,
+			Home: home(r.HomeAddress, r.HomeLatitude, r.HomeLongitude)}
 	}
 	return out, nil
 }
@@ -128,7 +169,8 @@ func get(ctx context.Context, q *db.Queries, caregiverID, visitID uuid.UUID) (De
 	if err != nil {
 		return Detail{}, err
 	}
-	return Detail{Visit: r.Visit, ElderName: r.ElderName, SessionID: r.SessionID}, nil
+	return Detail{Visit: r.Visit, ElderName: r.ElderName, SessionID: r.SessionID,
+		Home: home(r.HomeAddress, r.HomeLatitude, r.HomeLongitude)}, nil
 }
 
 func closed(status string) bool {
@@ -150,10 +192,14 @@ func (s *Service) RecordLocation(ctx context.Context, caregiverID, visitID uuid.
 		return LocationResult{}, ErrClosed
 	}
 
-	minutes, err := s.eta.Minutes(ctx, eta.Request{
+	req := eta.Request{
 		Latitude: loc.Latitude, Longitude: loc.Longitude,
 		RecordedAt: loc.RecordedAt, ScheduledTime: d.Visit.ScheduledTime,
-	})
+	}
+	if d.Home != nil {
+		req.Destination = &eta.Point{Latitude: d.Home.Latitude, Longitude: d.Home.Longitude}
+	}
+	minutes, err := s.eta.Minutes(ctx, req)
 	if err != nil {
 		return LocationResult{}, fmt.Errorf("estimate eta: %w", err)
 	}
