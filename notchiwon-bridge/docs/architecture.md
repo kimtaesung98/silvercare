@@ -53,7 +53,7 @@ app/
 | 음성 | `record`(녹음) + 발화 구간 감지, `just_audio`(재생 큐) | 없음 |
 | 기기 제어 | Lock Task 모드·화면 상시 켜짐 (플랫폼 채널로 Android 네이티브 호출) | 일반 앱 |
 | 백그라운드 | 마이크용 Foreground Service | `geolocator` + 위치용 Foreground Service |
-| 푸시·지도 | 없음 | `firebase_messaging`, 카카오맵 또는 티맵 플러그인 |
+| 푸시·지도 | 없음 | `firebase_messaging`, `flutter_map`(개발 중 OSM 타일) + 카카오맵 앱 길안내 |
 
 상태 관리는 Riverpod, 화면 이동은 go_router를 기본으로 합니다.
 
@@ -78,7 +78,7 @@ server/
     ├── companion/           말동무 모드 일정·토큰 한도
     ├── llm/                 Claude 호출, 프롬프트 템플릿
     ├── speech/              STT·TTS (Clova)
-    ├── eta/                 카카오모빌리티·티맵
+    ├── eta/                 카카오모빌리티 (키가 없으면 예정 시각 기준)
     ├── notify/              FCM
     ├── auth/                기기 토큰, 조무사 로그인
     └── db/                  sqlc 생성 코드
@@ -94,7 +94,7 @@ server/
 | Redis | `redis/go-redis/v9` |
 | 작업 큐 | `riverqueue/river` |
 | Claude | `anthropics/anthropic-sdk-go` |
-| 푸시 | `firebase.google.com/go/v4` |
+| 푸시 | FCM HTTP v1 직접 호출 (`golang.org/x/oauth2/google` 서비스 계정) |
 | 설정 | `caarlos0/env` |
 | 로깅 | 표준 `log/slog` |
 | 테스트 | `testcontainers-go` |
@@ -223,10 +223,19 @@ Claude는 서버에서만 호출합니다. API 키가 기기에 남지 않고, �
 | 23 | 도착 임박 화면 기준 (2026-10-06) | 조무사 ETA 2분 이하, 픽업 브릿지 세션에서만 |
 | 24 | 키오스크 (2026-10-06) | Lock Task는 기기 소유자로 등록했을 때만 잠김. 안 되면 false를 돌려주고 보통 앱으로 동작. 대화 중에는 마이크 유형 Foreground Service 알림 하나 |
 | 25 | 0번 문장 음성 보관 (2026-10-06) | Postgres `opener_clip_audio`에 두고 첫 요청이나 `admin synth-openers`로 합성. 합성하면 목록 해시가 바뀌어 태블릿이 다시 받음 |
+| 26 | River 버전 (2026-10-06) | v0.44.1로 고정. 그 뒤 버전과 `golang.org/x/oauth2` v0.37+는 Go 1.26을 요구함 (결정 11). 큐는 `alerts`(위급 알림)와 `briefings`(브리핑)로 나눠 브리핑이 밀려도 알림이 늦지 않게 함. River 테이블은 서버 시작 시 goose 다음에 만듦 |
+| 27 | FCM 호출 (2026-10-06) | Firebase Admin SDK 대신 HTTP v1을 직접 호출 (서비스 계정 JSON 경로는 `FCM_CREDENTIALS_FILE`). 알림 채널 `escalation`, 높은 우선순위. 죽은 토큰은 기기 해지. 받은 휴대폰이 하나도 없으면 재시도 |
+| 28 | 키 없이 돌릴 때 (2026-10-06) | 카카오 키가 없거나 호출이 실패하면 예정 시각까지 남은 분을 ETA로, FCM이 없으면 앱의 미확인 위급 목록(`GET /escalations/open`, 30초마다 새로 읽음)으로만, Claude 키가 없으면 브리핑에 어르신 말씀을 그대로 인용 |
+| 29 | 어르신 댁 위치 (2026-10-06) | `elder.home_address/latitude/longitude`. ETA 목적지이자 앱 지도 표시. 없으면 예정 시각 기준 ETA |
+| 30 | 브리핑 작업 (2026-10-06) | 픽업 브릿지 세션이 끝날 때만. Haiku 구조화 출력(JSON 스키마)으로 요약·키워드 5개·감정 태그. 이미 있으면 건너뛰어 재시도해도 키워드 점수가 두 번 오르지 않음. 대화 중 위급이 있었으면 감정 태그를 `UNUSUAL`로 |
+| 31 | 조무사 앱 지도 (2026-10-06) | `flutter_map`에 개발 중에는 OpenStreetMap 타일, 길안내는 카카오맵 앱(없으면 웹)으로 넘김. 상용 타일(카카오·티맵)은 파일럿 전에 정함 |
+| 32 | 조무사 앱 설정·로그인 (2026-10-06) | 서버 주소와 Firebase 앱 설정은 `--dart-define`(`SERVER_URL`, `FIREBASE_API_KEY`, `FIREBASE_APP_ID`, `FIREBASE_SENDER_ID`, `FIREBASE_PROJECT_ID`). Firebase 값이 없으면 푸시 없이 동작. 로그인 토큰은 `flutter_secure_storage`에 보관 |
+| 33 | 이동 중 위치 (2026-10-06) | "출발하기"를 누른 방문 하나만, `geolocator` 위치 유형 Foreground Service로 받아 10초마다 가장 최근 위치 전송. 방문이 끝나거나(`VISIT_CLOSED`) 도착·로그아웃하면 멈춤 |
 
 ## 8. 아직 정하지 않은 것
 
 - 대화 원문·음성 보관 기간과 암호화 (개인정보 검토 필요)
 - 배포 위치: NCP vs AWS 서울 리전
+- 조무사 앱 지도 타일: 카카오 vs 티맵 (결정 31)
 - 조무사 로그인 방식: 전화번호 인증 vs 센터 발급 계정
 - 위급 키워드 목록의 요양·의료 전문가 검토
