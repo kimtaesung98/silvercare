@@ -18,15 +18,19 @@ import (
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/apigen"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/visit"
 )
 
 // Deps are what the HTTP layer needs.
 type Deps struct {
-	Pool   *pgxpool.Pool
-	Visits *visit.Service
-	Tokens *auth.Tokens
-	Logger *slog.Logger
+	Pool    *pgxpool.Pool
+	Visits  *visit.Service
+	Tokens  *auth.Tokens
+	Openers *opener.Library
+	// ElderWS serves GET /ws/elder (internal/session.Hub).
+	ElderWS http.Handler
+	Logger  *slog.Logger
 }
 
 // NewRouter returns the root HTTP handler.
@@ -35,6 +39,9 @@ func NewRouter(d Deps) http.Handler {
 	r.Use(middleware.RequestID)
 	r.Use(middleware.RealIP)
 	r.Use(middleware.Recoverer)
+	if d.ElderWS != nil {
+		r.Handle("/ws/elder", d.ElderWS)
+	}
 
 	s := &Server{deps: d, q: db.New(d.Pool)}
 	strict := apigen.NewStrictHandlerWithOptions(s,
@@ -123,20 +130,11 @@ func (s *Server) tabletFromRequest(ctx context.Context, r *http.Request) (auth.T
 	if !ok {
 		return auth.Tablet{}, errUnauthenticated
 	}
-	d, err := s.q.GetActiveDeviceByTokenHash(ctx, auth.HashDeviceToken(tok))
-	if errors.Is(err, pgx.ErrNoRows) {
+	t, err := auth.LookupTablet(ctx, s.q, tok)
+	if errors.Is(err, auth.ErrUnknownDevice) {
 		return auth.Tablet{}, errUnauthenticated
 	}
-	if err != nil {
-		return auth.Tablet{}, err
-	}
-	if d.Kind != "ELDER_TABLET" || d.ElderID == nil {
-		return auth.Tablet{}, errUnauthenticated
-	}
-	if err := s.q.TouchDevice(ctx, d.ID); err != nil {
-		s.deps.Logger.WarnContext(ctx, "touch device", "device_id", d.ID, "err", err)
-	}
-	return auth.Tablet{DeviceID: d.ID, ElderID: *d.ElderID}, nil
+	return t, err
 }
 
 func writeError(w http.ResponseWriter, status int, code, message string) {

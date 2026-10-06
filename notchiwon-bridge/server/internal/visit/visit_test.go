@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -21,6 +22,13 @@ type recorder struct {
 	mu      sync.Mutex
 	started []db.ConversationSession
 	ended   []db.ConversationSession
+	etas    []int
+}
+
+func (r *recorder) EtaUpdated(_ context.Context, _ db.ConversationSession, minutes int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.etas = append(r.etas, minutes)
 }
 
 func (r *recorder) SessionStarted(_ context.Context, s db.ConversationSession, _ int) {
@@ -51,7 +59,7 @@ func newService(pool *pgxpool.Pool, now time.Time) (*Service, *recorder) {
 	rec := &recorder{}
 	clock := func() time.Time { return now }
 	s := NewService(pool, eta.Schedule{Now: clock}, rec,
-		Config{TriggerEtaMinutes: 15, Location: seoul},
+		Config{TriggerEtaMinutes: 15, Location: seoul, PromptVersion: "conv-test"},
 		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	s.now = clock
 	return s, rec
@@ -86,6 +94,12 @@ func TestRecordLocationStartsSessionAtTrigger(t *testing.T) {
 	if len(rec.started) != 1 || rec.started[0].ID != *res.SessionID || rec.started[0].Mode != "PICKUP_BRIDGE" {
 		t.Fatalf("notified %+v", rec.started)
 	}
+	if v := rec.started[0].PromptVersion; v == nil || *v != "conv-test" {
+		t.Errorf("prompt_version = %v", v)
+	}
+	if len(rec.etas) != 0 {
+		t.Errorf("eta updates with the start: %v", rec.etas)
+	}
 	first := *res.SessionID
 
 	res, err = s.RecordLocation(ctx, f.CaregiverID, f.VisitID, here)
@@ -97,6 +111,9 @@ func TestRecordLocationStartsSessionAtTrigger(t *testing.T) {
 	}
 	if len(rec.started) != 1 {
 		t.Errorf("started %d times", len(rec.started))
+	}
+	if !slices.Equal(rec.etas, []int{14}) {
+		t.Errorf("eta updates = %v, want [14]", rec.etas)
 	}
 
 	var locations int

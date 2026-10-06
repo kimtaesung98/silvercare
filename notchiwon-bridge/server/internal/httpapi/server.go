@@ -12,6 +12,7 @@ import (
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/apigen"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/visit"
 )
 
@@ -253,12 +254,31 @@ func (s *Server) AckEscalation(context.Context, apigen.AckEscalationRequestObjec
 	return nil, errNotImplemented
 }
 
-// ListOpenerClips is stage 3 (seed data) and 4 (audio cache).
-func (s *Server) ListOpenerClips(context.Context, apigen.ListOpenerClipsRequestObject) (apigen.ListOpenerClipsResponseObject, error) {
-	return nil, errNotImplemented
+// ListOpenerClips implements GET /tablet/opener-clips.
+func (s *Server) ListOpenerClips(ctx context.Context, _ apigen.ListOpenerClipsRequestObject) (apigen.ListOpenerClipsResponseObject, error) {
+	t, ok := auth.TabletFrom(ctx)
+	if !ok {
+		return nil, errors.New("no tablet in context")
+	}
+	elder, err := s.q.GetElder(ctx, t.ElderID)
+	if err != nil {
+		return nil, fmt.Errorf("read elder: %w", err)
+	}
+	m, err := s.deps.Openers.Manifest(ctx, opener.VoiceOf(elder))
+	if err != nil {
+		return nil, err
+	}
+	out := apigen.ListOpenerClips200JSONResponse{Voice: m.Voice, Version: m.Version, Clips: make([]apigen.OpenerClip, len(m.Clips))}
+	for i, c := range m.Clips {
+		out.Clips[i] = apigen.OpenerClip{
+			Id: c.ID, Category: apigen.OpenerCategory(c.Category), Text: c.Text, DurationMs: c.DurationMs,
+			AudioUrl: "/tablet/opener-clips/" + c.ID.String() + "/audio",
+		}
+	}
+	return out, nil
 }
 
-// GetOpenerClipAudio is stage 4.
+// GetOpenerClipAudio is stage 4 (the clips are synthesized with Clova TTS then).
 func (s *Server) GetOpenerClipAudio(context.Context, apigen.GetOpenerClipAudioRequestObject) (apigen.GetOpenerClipAudioResponseObject, error) {
 	return nil, errNotImplemented
 }

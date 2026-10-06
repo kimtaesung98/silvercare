@@ -2,7 +2,8 @@
 
 > 기준일: 2026-10-06. 닫힌 PR #1(NestJS 대화 루프)의 동작과 테스트 케이스를 Go 서버 단계 3으로 옮기기 위한 명세입니다.
 > 전체 흐름은 [architecture.md](../architecture.md) 6.1절을 따르고, 이 문서는 그중 **어르신 발화 한 건을 처리하는 규칙**과 **반드시 통과해야 하는 테스트 케이스**만 정합니다.
-> PR #1의 원본 코드는 커밋 `1569252`(`backend/src/modules/session/session.service.ts`, `*.spec.ts`)에서 볼 수 있습니다.
+> PR #1의 원본 코드는 PR #1 브랜치(`refs/pull/1/head`, `backend/src/modules/session/session.service.ts`, `*.spec.ts`)에서 볼 수 있습니다.
+> Go 구현은 `server/internal/session`(엔진), `internal/escalation`(규칙), `internal/llm`(프롬프트)이고 4절 테스트는 `internal/session/engine_test.go`, `internal/escalation/rules_test.go`입니다.
 
 ## 1. 발화 한 건의 처리 순서
 
@@ -80,5 +81,5 @@ Go의 `regexp`(RE2)는 `(?!트)` 같은 부정 전방탐색을 지원하지 않�
 
 ## 5. PR #1에서 남긴 미결 사항
 
-- 위급 이벤트 저장이 실패하면 요청 전체가 실패해 어르신에게 안심 문장이 가지 않았습니다. Go 구현에서는 이벤트 저장·알림 실패와 상관없이 안심 문장은 보내고, 실패는 오류 로그와 재시도로 처리할지 단계 3에서 정합니다.
-- 세션 시작은 조건부 `UPDATE`로 `SESSION_ACTIVE`를 한 번만 차지해야 합니다(위치가 동시에 두 번 오는 경우). 단계 2 항목입니다.
+- ~~위급 이벤트 저장이 실패하면 요청 전체가 실패해 어르신에게 안심 문장이 가지 않았습니다.~~ 단계 3에서 결정: 이벤트 저장이 실패해도 안심 문장은 보내고 실패는 오류 로그로 남깁니다. 알림 재시도는 FCM을 붙이는 단계 5에서 정합니다.
+- ~~세션 시작은 조건부 `UPDATE`로 `SESSION_ACTIVE`를 한 번만 차지해야 합니다.~~ 단계 2에서 구현했습니다.

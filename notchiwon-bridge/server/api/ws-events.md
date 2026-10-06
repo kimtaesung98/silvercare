@@ -96,6 +96,11 @@
 - **대체 문장**: Claude가 시간 안에 응답하지 않거나 오류가 나면 대체 문장을 `ai.reply`로 보내고 `ai.turn_end {outcome: FALLBACK}`로 끝냅니다.
 - **끼어들기**: 태블릿은 어르신이 말을 시작하면 재생 큐를 비우고 `elder.barge_in`을 보냅니다. 서버는 그 턴의 남은 생성을 멈추고 `ai.turn_end {outcome: CANCELLED}`를 보냅니다. 끼어들기 뒤에 도착한 같은 턴의 `ai.reply`는 태블릿이 버립니다.
 - **텍스트 모드**: `elder.text`는 STT만 건너뛰고 같은 흐름을 탑니다. `ai.reply.audio`는 `null`일 수 있습니다.
+- **추임새**: 1번 문장이 2초 안에 없으면 `ai.filler`를 한 번 보냅니다. 추임새는 대화 기록(`utterance`)에 남지 않습니다.
+- **0번 문장이 없을 때**: 어르신 목소리에 그 유형의 클립이 없으면 `ai.opener` 없이 `ai.reply` 1번부터 옵니다. 위급 감지인데 ESCALATION 클립이 없으면 안심 문장이 `ai.reply` 1번으로 오고 `ai.turn_end {ESCALATED, sentences: 1}`입니다.
+- **새 발화**: 턴이 끝나기 전에 새 `elder.text`가 오면 끼어들기와 같이 앞 턴을 `CANCELLED`로 끝내고 새 턴을 시작합니다.
+
+> 단계 3 서버 구현 기준: `elder.audio`는 바이너리 프레임 짝만 확인하고 `error {STT_FAILED}`로 답합니다(Clova 연결은 단계 4). `session.end`는 말동무 세션만 끝내며, 픽업 대기 세션에 보내면 `error {INVALID_MESSAGE}`입니다. 말동무 요청의 취침 시간·토큰 한도 확인은 단계 6입니다.
 
 ## 6. 세션 흐름
 
