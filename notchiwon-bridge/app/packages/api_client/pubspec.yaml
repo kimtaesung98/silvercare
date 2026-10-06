@@ -17,10 +17,13 @@ dependencies:
   http: ^1.2.0
   intl: ^0.20.0
   meta: ^1.15.0
+  # /ws/elder 클라이언트 (손으로 관리, src/ws)
+  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  stream_channel: ^2.1.2
   flutter_lints: ^6.0.0
 
 # For information on the generic Dart part of this file, see the

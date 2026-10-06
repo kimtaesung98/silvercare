@@ -20,6 +20,7 @@ import (
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/eta"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/speech"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/testdb"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/visit"
 )
@@ -27,13 +28,26 @@ import (
 var discard = slog.New(slog.NewTextHandler(io.Discard, nil))
 
 func newHandler(pool *pgxpool.Pool) http.Handler {
+	return newHandlerWithTTS(pool, speech.Unavailable{})
+}
+
+func newHandlerWithTTS(pool *pgxpool.Pool, tts speech.Synthesizer) http.Handler {
 	return NewRouter(Deps{
 		Pool:    pool,
 		Visits:  visit.NewService(pool, eta.Schedule{}, nil, visit.Config{TriggerEtaMinutes: 15, Location: time.UTC}, discard),
 		Tokens:  auth.NewTokens(strings.Repeat("k", 32), time.Hour),
 		Openers: opener.NewLibrary(db.New(pool)),
+		TTS:     tts,
 		Logger:  discard,
 	})
+}
+
+// countingTTS returns the text as "audio" and counts calls.
+type countingTTS struct{ calls int }
+
+func (c *countingTTS) Synthesize(_ context.Context, text, voice string) ([]byte, error) {
+	c.calls++
+	return []byte("mp3:" + voice + ":" + text), nil
 }
 
 type client struct {
@@ -284,6 +298,45 @@ func TestOpenerClips(t *testing.T) {
 	if changed.Version == got.Version || len(changed.Clips) != len(got.Clips)-1 {
 		t.Errorf("after retiring: %s, %d clips", changed.Version, len(changed.Clips))
 	}
+}
+
+func TestOpenerClipAudio(t *testing.T) {
+	pool := testdb.New(t)
+	f := testdb.Seed(t, pool, time.Now().Add(time.Hour))
+	ctx := context.Background()
+	token := auth.NewDeviceToken()
+	if _, err := db.New(pool).CreateElderTablet(ctx, db.CreateElderTabletParams{
+		ElderID: &f.ElderID, TokenHash: auth.HashDeviceToken(token),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	tts := &countingTTS{}
+	tablet := client{t: t, h: newHandlerWithTTS(pool, tts), token: token}
+	m := decode[apigen.OpenerClipManifest](t, tablet.do(http.MethodGet, "/tablet/opener-clips", nil), http.StatusOK)
+	clip := m.Clips[0]
+	path := "/tablet/opener-clips/" + clip.Id.String() + "/audio"
+
+	for range 2 {
+		rec := tablet.do(http.MethodGet, path, nil)
+		if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "audio/mpeg" || rec.Body.String() != "mp3:default:"+clip.Text {
+			t.Fatalf("audio: %d %s %q", rec.Code, rec.Header().Get("Content-Type"), rec.Body)
+		}
+	}
+	if tts.calls != 1 {
+		t.Errorf("synthesized %d times, want once", tts.calls)
+	}
+	// Synthesis changes the manifest version so tablets fetch the new audio.
+	after := decode[apigen.OpenerClipManifest](t, tablet.do(http.MethodGet, "/tablet/opener-clips", nil), http.StatusOK)
+	if after.Version == m.Version {
+		t.Error("version unchanged after synthesis")
+	}
+
+	decode[apigen.ApiError](t, tablet.do(http.MethodGet, "/tablet/opener-clips/"+uuid.NewString()+"/audio", nil), http.StatusNotFound)
+	other := client{t: t, h: newHandler(pool), token: token}
+	if e := decode[apigen.ApiError](t, other.do(http.MethodGet, "/tablet/opener-clips/"+m.Clips[1].Id.String()+"/audio", nil), http.StatusNotFound); e.Code != "AUDIO_NOT_READY" {
+		t.Errorf("without tts: %+v", e)
+	}
+	decode[apigen.ApiError](t, client{t: t, h: newHandler(pool)}.do(http.MethodGet, path, nil), http.StatusUnauthorized)
 }
 
 func TestLaterStageEndpointsAnswer501(t *testing.T) {

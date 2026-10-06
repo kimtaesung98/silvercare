@@ -4,11 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -20,13 +22,51 @@ import (
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/llm"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/speech"
 )
 
 type wsEnv struct {
 	*env
-	hub   *Hub
-	srv   *httptest.Server
-	token string
+	hub    *Hub
+	srv    *httptest.Server
+	token  string
+	speech *fakeSpeech
+}
+
+// fakeSpeech is Clova: it hears a fixed sentence and "synthesizes" the text
+// itself as audio.
+type fakeSpeech struct {
+	mu     sync.Mutex
+	heard  string
+	sttErr error
+	ttsErr error
+}
+
+func (f *fakeSpeech) set(heard string, sttErr, ttsErr error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.heard, f.sttErr, f.ttsErr = heard, sttErr, ttsErr
+}
+
+func (f *fakeSpeech) Recognize(_ context.Context, audio []byte, format string, _ int) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sttErr != nil {
+		return "", f.sttErr
+	}
+	if len(audio) == 0 || format == "" {
+		return "", errors.New("no audio")
+	}
+	return f.heard, nil
+}
+
+func (f *fakeSpeech) Synthesize(_ context.Context, text, voice string) ([]byte, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.ttsErr != nil {
+		return nil, f.ttsErr
+	}
+	return []byte(voice + ":" + text), nil
 }
 
 func newWSEnv(t *testing.T) *wsEnv {
@@ -41,13 +81,15 @@ func newWSEnv(t *testing.T) *wsEnv {
 	if _, err := e.q.CreateElderTablet(ctx, db.CreateElderTabletParams{ElderID: &e.elderID, TokenHash: auth.HashDeviceToken(token)}); err != nil {
 		t.Fatal(err)
 	}
-	hub, err := NewHub(e.q, e.engine, opener.NewLibrary(e.q), llm.PromptVersion, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	fs := &fakeSpeech{sttErr: speech.ErrUnavailable, ttsErr: speech.ErrUnavailable}
+	hub, err := NewHub(e.q, e.engine, opener.NewLibrary(e.q), HubConfig{PromptVersion: llm.PromptVersion, STT: fs, TTS: fs},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	srv := httptest.NewServer(hub)
 	t.Cleanup(srv.Close)
-	return &wsEnv{env: e, hub: hub, srv: srv, token: token}
+	return &wsEnv{env: e, hub: hub, srv: srv, token: token, speech: fs}
 }
 
 type client struct {
@@ -71,8 +113,9 @@ func (w *wsEnv) dial(t *testing.T) *client {
 }
 
 type event struct {
-	Type string
-	Data map[string]any
+	Type  string
+	Data  map[string]any
+	Audio []byte // the binary frame that followed, if any
 }
 
 // next reads one server event and checks it against ws-events.schema.json.
@@ -97,6 +140,13 @@ func (c *client) next() event {
 	var ev event
 	if err := json.Unmarshal(data, &ev); err != nil {
 		c.t.Fatal(err)
+	}
+	if a, ok := ev.Data["audio"].(map[string]any); ok {
+		typ, bin, err := c.ws.Read(ctx)
+		if err != nil || typ != websocket.MessageBinary || float64(len(bin)) != a["bytes"] {
+			c.t.Fatalf("audio frame after %s: type %v, %d bytes, err %v; want %v bytes", ev.Type, typ, len(bin), err, a["bytes"])
+		}
+		ev.Audio = bin
 	}
 	return ev
 }
@@ -241,8 +291,7 @@ func TestWSInvalidMessages(t *testing.T) {
 		t.Errorf("pong = %v", ev)
 	}
 
-	// Audio is refused until speech recognition arrives in stage 4, but the
-	// frame pairing is still enforced.
+	// Without Clova the audio is refused, but the frame pairing is still enforced.
 	sess, err := w.q.CreateCompanionSession(context.Background(), db.CreateCompanionSessionParams{ElderID: w.elderID, StartedBy: "ELDER"})
 	if err != nil {
 		t.Fatal(err)
@@ -251,15 +300,65 @@ func TestWSInvalidMessages(t *testing.T) {
 	if err := c.ws.Write(context.Background(), websocket.MessageBinary, []byte{1, 2, 3, 4}); err != nil {
 		t.Fatal(err)
 	}
-	if ev := c.next(); ev.Data["code"] != "STT_FAILED" {
+	if ev := c.expect("error"); ev.Data["code"] != "STT_FAILED" {
 		t.Errorf("audio: %v", ev)
 	}
 	c.send("elder.audio", map[string]any{"sessionId": sess.ID, "clientId": "u", "audio": map[string]any{"format": "pcm16", "bytes": 8}})
 	if err := c.ws.Write(context.Background(), websocket.MessageBinary, []byte{1, 2}); err != nil {
 		t.Fatal(err)
 	}
-	if ev := c.next(); ev.Data["code"] != "AUDIO_FRAME_MISSING" {
+	if ev := c.expect("error"); ev.Data["code"] != "AUDIO_FRAME_MISSING" {
 		t.Errorf("short audio: %v", ev)
+	}
+
+	c.send("client.metrics", map[string]any{"sessionId": sess.ID, "turnId": 2, "utteranceEndToOpenerMs": 600, "openerEndToFirstReplyMs": nil})
+	c.send("ping", map[string]any{"nonce": "after-metrics"})
+	if ev := c.next(); ev.Type != "pong" {
+		t.Errorf("client.metrics answered with %v", ev)
+	}
+}
+
+// A spoken turn: the audio is recognized, and every reply carries its MP3.
+func TestWSVoiceTurn(t *testing.T) {
+	w := newWSEnv(t)
+	w.speech.set("손주가 어제 왔어", nil, nil)
+	w.llm.chunks = []string{"손주분이 오셨군요. 무엇을 하셨어요?"}
+	c := w.dial(t)
+	c.expect("connection.ready")
+	sess, err := w.q.CreateCompanionSession(context.Background(), db.CreateCompanionSessionParams{ElderID: w.elderID, StartedBy: "ELDER"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	w.say(t, 0, "AI", "안녕하세요.") // already greeted
+
+	pcm := make([]byte, 3200)
+	c.send("elder.audio", map[string]any{"sessionId": sess.ID, "clientId": "u-9", "audio": map[string]any{"format": "pcm16", "sampleRateHz": 16000, "bytes": len(pcm)}})
+	if err := c.ws.Write(context.Background(), websocket.MessageBinary, pcm); err != nil {
+		t.Fatal(err)
+	}
+	tr := c.expect("elder.transcript")
+	if tr.Data["text"] != "손주가 어제 왔어" || tr.Data["clientId"] != "u-9" {
+		t.Errorf("transcript = %v", tr.Data)
+	}
+	c.expect("ai.opener")
+	for _, want := range []string{"손주분이 오셨군요.", "무엇을 하셨어요?"} {
+		r := c.next()
+		if r.Type != "ai.reply" || r.Data["text"] != want || string(r.Audio) != "default:"+want {
+			t.Errorf("reply = %v, audio %q", r.Data, r.Audio)
+		}
+	}
+	if end := c.next(); end.Type != "ai.turn_end" || end.Data["outcome"] != "COMPLETED" {
+		t.Errorf("end = %v", end)
+	}
+
+	// A failing synthesis still delivers the sentence as text.
+	w.speech.set("오늘 날씨 좋네", nil, errors.New("clova 500"))
+	c.send("elder.audio", map[string]any{"sessionId": sess.ID, "clientId": "u-10", "audio": map[string]any{"format": "pcm16", "bytes": len(pcm)}})
+	if err := c.ws.Write(context.Background(), websocket.MessageBinary, pcm); err != nil {
+		t.Fatal(err)
+	}
+	if r := c.expect("ai.reply"); r.Data["audio"] != nil || r.Audio != nil {
+		t.Errorf("reply without tts = %v", r.Data)
 	}
 }
 

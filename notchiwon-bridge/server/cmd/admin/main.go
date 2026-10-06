@@ -3,6 +3,7 @@
 //	admin create-tablet -elder <elder id> [-label 거실 태블릿]   prints a new tablet token
 //	admin set-caregiver-login -caregiver <id> -login <login id>  reads the password from stdin
 //	admin seed-demo                                             adds a demo center, elder, caregiver, visit and tablet
+//	admin synth-openers                                         synthesizes missing opener clip audio with Clova TTS
 //
 // Tokens and passwords are printed once and only their hashes are stored.
 package main
@@ -23,7 +24,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/config"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/speech"
 )
 
 func main() {
@@ -33,7 +37,7 @@ func main() {
 	}
 }
 
-const usage = "usage: admin create-tablet | set-caregiver-login | seed-demo (see -h of each)"
+const usage = "usage: admin create-tablet | set-caregiver-login | seed-demo | synth-openers (see -h of each)"
 
 func run(ctx context.Context, args []string, stdin io.Reader, out io.Writer) error {
 	if len(args) == 0 {
@@ -56,6 +60,8 @@ func run(ctx context.Context, args []string, stdin io.Reader, out io.Writer) err
 		return setCaregiverLogin(ctx, pool, args[1:], stdin, out)
 	case "seed-demo":
 		return seedDemo(ctx, pool, out)
+	case "synth-openers":
+		return synthOpeners(ctx, pool, out)
 	default:
 		return errors.New(usage)
 	}
@@ -170,4 +176,19 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
 	fmt.Fprintf(out, "caregiver login: %s / %s\nelder: %s\nvisit (in 30 min): %s\ntablet token: %s\n",
 		login, password, elderID, visitID, token)
 	return nil
+}
+
+// synthOpeners makes the audio of every active opener clip that has none, so
+// tablets need not wait for on-demand synthesis.
+func synthOpeners(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
+	cfg, err := config.LoadClova()
+	if err != nil {
+		return err
+	}
+	if !cfg.Enabled() {
+		return errors.New("NAVER_CLOVA_CLIENT_ID and NAVER_CLOVA_CLIENT_SECRET are required")
+	}
+	n, err := opener.NewLibrary(db.New(pool)).SynthesizeMissing(ctx, speech.NewClova(speech.ClovaConfig(cfg)))
+	fmt.Fprintf(out, "synthesized %d clips\n", n)
+	return err
 }

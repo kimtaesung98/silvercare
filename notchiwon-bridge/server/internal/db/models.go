@@ -164,6 +164,12 @@ type OpenerClip struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+type OpenerClipAudio struct {
+	ClipID    uuid.UUID `json:"clip_id"`
+	Mp3       []byte    `json:"mp3"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type Utterance struct {
 	ID           uuid.UUID  `json:"id"`
 	SessionID    uuid.UUID  `json:"session_id"`

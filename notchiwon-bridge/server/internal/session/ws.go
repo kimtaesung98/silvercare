@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -23,6 +24,7 @@ import (
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/speech"
 )
 
 // Connection timings (api/ws-events.md section 1).
@@ -33,15 +35,23 @@ const (
 	maxFrame    = 4 << 20 // one utterance of audio
 )
 
+// HubConfig are the Hub's collaborators besides the database and engine.
+type HubConfig struct {
+	// PromptVersion is recorded on companion sessions the tablet starts.
+	PromptVersion string
+	STT           speech.Recognizer
+	TTS           speech.Synthesizer
+}
+
 // Hub serves GET /ws/elder: one connection per elder tablet. It also tells
 // connected tablets about sessions the visit service starts and ends.
 type Hub struct {
-	q             *db.Queries
-	engine        *Engine
-	openers       *opener.Library
-	promptVersion string
-	logger        *slog.Logger
-	schema        *jsonschema.Schema
+	q       *db.Queries
+	engine  *Engine
+	openers *opener.Library
+	cfg     HubConfig
+	logger  *slog.Logger
+	schema  *jsonschema.Schema
 
 	mu       sync.Mutex
 	byDevice map[uuid.UUID]*conn
@@ -50,7 +60,13 @@ type Hub struct {
 }
 
 // NewHub returns a Hub.
-func NewHub(q *db.Queries, engine *Engine, openers *opener.Library, promptVersion string, logger *slog.Logger) (*Hub, error) {
+func NewHub(q *db.Queries, engine *Engine, openers *opener.Library, cfg HubConfig, logger *slog.Logger) (*Hub, error) {
+	if cfg.STT == nil {
+		cfg.STT = speech.Unavailable{}
+	}
+	if cfg.TTS == nil {
+		cfg.TTS = speech.Unavailable{}
+	}
 	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(api.WSEventsSchema))
 	if err != nil {
 		return nil, fmt.Errorf("parse ws-events schema: %w", err)
@@ -65,7 +81,7 @@ func NewHub(q *db.Queries, engine *Engine, openers *opener.Library, promptVersio
 		return nil, fmt.Errorf("compile ws-events schema: %w", err)
 	}
 	return &Hub{
-		q: q, engine: engine, openers: openers, promptVersion: promptVersion, logger: logger, schema: schema,
+		q: q, engine: engine, openers: openers, cfg: cfg, logger: logger, schema: schema,
 		byDevice: map[uuid.UUID]*conn{}, byElder: map[uuid.UUID]*conn{}, lastEta: map[uuid.UUID]int{},
 	}, nil
 }
@@ -102,7 +118,10 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ws.SetReadLimit(maxFrame)
 	ctx, cancel := context.WithCancel(context.WithoutCancel(r.Context()))
-	c := &conn{h: h, ws: ws, tablet: tablet, out: make(chan []byte, sendBuffer), ctx: ctx, cancel: cancel}
+	c := &conn{
+		h: h, ws: ws, tablet: tablet, ctx: ctx, cancel: cancel,
+		out: make(chan []frame, sendBuffer), events: make(chan func(), sendBuffer),
+	}
 	h.register(c)
 	defer h.unregister(c)
 	c.run()
@@ -159,7 +178,9 @@ func (h *Hub) SessionEnded(_ context.Context, s db.ConversationSession) {
 	delete(h.lastEta, s.ID)
 	h.mu.Unlock()
 	if c := h.connFor(s.ElderID); c != nil && s.EndedReason != nil {
-		c.send("session.ended", map[string]any{"sessionId": s.ID, "reason": *s.EndedReason})
+		// After the events of a turn still being delivered.
+		reason := *s.EndedReason
+		c.later(func() { c.send("session.ended", map[string]any{"sessionId": s.ID, "reason": reason}) })
 	}
 }
 
@@ -182,7 +203,9 @@ type conn struct {
 	h      *Hub
 	ws     *websocket.Conn
 	tablet auth.Tablet
-	out    chan []byte
+	out    chan []frame // each item is written as one unit
+	events chan func()  // a turn's events, run in order (TTS happens here)
+	voice  string       // the elder's TTS voice
 	ctx    context.Context
 	cancel context.CancelFunc
 	nonce  atomic.Int64
@@ -203,6 +226,7 @@ func (c *conn) close(code websocket.StatusCode, reason string) {
 func (c *conn) run() {
 	defer c.close(websocket.StatusNormalClosure, "")
 	go c.writeLoop()
+	go c.eventLoop()
 	if err := c.ready(); err != nil {
 		c.log().Error("connection ready", "err", err)
 		c.close(websocket.StatusInternalError, "internal error")
@@ -233,10 +257,12 @@ func (c *conn) writeLoop() {
 		select {
 		case <-c.ctx.Done():
 			return
-		case msg := <-c.out:
-			if err := c.ws.Write(c.ctx, websocket.MessageText, msg); err != nil {
-				c.close(websocket.StatusInternalError, "write failed")
-				return
+		case frames := <-c.out:
+			for _, f := range frames {
+				if err := c.ws.Write(c.ctx, f.typ, f.data); err != nil {
+					c.close(websocket.StatusInternalError, "write failed")
+					return
+				}
 			}
 		case <-ping.C:
 			c.send("ping", map[string]any{"nonce": strconv.FormatInt(c.nonce.Add(1), 10)})
@@ -244,28 +270,77 @@ func (c *conn) writeLoop() {
 	}
 }
 
-// send queues a text frame. A tablet too slow to drain its queue is dropped;
-// it reconnects and resumes from connection.ready.
+// frame is one WebSocket message.
+type frame struct {
+	typ  websocket.MessageType
+	data []byte
+}
+
+// send queues a text frame.
 func (c *conn) send(typ string, data any) {
-	if c.closed.Load() {
-		return
+	if msg, ok := c.encode(typ, data); ok {
+		c.enqueue(frame{websocket.MessageText, msg})
 	}
+}
+
+// sendWithAudio queues a text frame and the binary audio frame that must
+// follow it (api/ws-events.md section 2) as one unit.
+func (c *conn) sendWithAudio(typ string, data any, audio []byte) {
+	if msg, ok := c.encode(typ, data); ok {
+		c.enqueue(frame{websocket.MessageText, msg}, frame{websocket.MessageBinary, audio})
+	}
+}
+
+func (c *conn) encode(typ string, data any) ([]byte, bool) {
 	raw, err := json.Marshal(data)
 	if err != nil {
 		c.log().Error("marshal ws event", "type", typ, "err", err)
-		return
+		return nil, false
 	}
 	now := time.Now().UTC()
 	msg, err := json.Marshal(envelope{Type: typ, TS: &now, Data: raw})
 	if err != nil {
 		c.log().Error("marshal ws envelope", "type", typ, "err", err)
+		return nil, false
+	}
+	return msg, true
+}
+
+// enqueue drops a tablet too slow to drain its queue; it reconnects and
+// resumes from connection.ready.
+func (c *conn) enqueue(frames ...frame) {
+	if c.closed.Load() {
 		return
 	}
 	select {
-	case c.out <- msg:
+	case c.out <- frames:
 	default:
 		c.log().Warn("ws send buffer full, closing")
 		c.close(websocket.StatusTryAgainLater, "too slow")
+	}
+}
+
+// later runs f on the event goroutine, after the events queued before it.
+func (c *conn) later(f func()) {
+	if c.closed.Load() {
+		return
+	}
+	select {
+	case c.events <- f:
+	default:
+		c.log().Warn("ws event queue full, closing")
+		c.close(websocket.StatusTryAgainLater, "too slow")
+	}
+}
+
+func (c *conn) eventLoop() {
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case f := <-c.events:
+			f()
+		}
 	}
 }
 
@@ -284,7 +359,8 @@ func (c *conn) ready() error {
 	if err != nil {
 		return fmt.Errorf("read elder: %w", err)
 	}
-	m, err := c.h.openers.Manifest(c.ctx, opener.VoiceOf(elder))
+	c.voice = opener.VoiceOf(elder)
+	m, err := c.h.openers.Manifest(c.ctx, c.voice)
 	if err != nil {
 		return err
 	}
@@ -358,6 +434,8 @@ func (c *conn) handle(data []byte) {
 		go c.elderText(d.SessionID, d.ClientID, d.Text, env.ID)
 	case "elder.audio":
 		c.elderAudio(env)
+	case "client.metrics":
+		c.clientMetrics(env.Data)
 	case "elder.barge_in":
 		var d struct {
 			SessionID uuid.UUID
@@ -373,7 +451,7 @@ func (c *conn) handle(data []byte) {
 // clientEvents are the events a tablet may send.
 var clientEvents = map[string]bool{
 	"ping": true, "pong": true, "session.request": true, "session.end": true,
-	"elder.audio": true, "elder.text": true, "elder.barge_in": true,
+	"elder.audio": true, "elder.text": true, "elder.barge_in": true, "client.metrics": true,
 }
 
 var errNotYours = errors.New("session belongs to another elder")
@@ -391,15 +469,27 @@ func (c *conn) ownSession(id uuid.UUID) (db.ConversationSession, error) {
 }
 
 func (c *conn) elderText(sessionID uuid.UUID, clientID, text, msgID string) {
-	if _, err := c.ownSession(sessionID); err != nil {
-		if errors.Is(err, pgx.ErrNoRows) || errors.Is(err, errNotYours) {
-			c.sendError("NO_ACTIVE_SESSION", "진행 중인 세션이 아닙니다.", msgID)
-			return
-		}
-		c.log().Error("read session", "session_id", sessionID, "err", err)
-		c.sendError("INTERNAL", "서버 오류가 발생했습니다.", msgID)
+	if !c.checkSession(sessionID, msgID) {
 		return
 	}
+	c.turn(sessionID, clientID, text, msgID)
+}
+
+// checkSession answers NO_ACTIVE_SESSION unless the session is this elder's.
+func (c *conn) checkSession(sessionID uuid.UUID, msgID string) bool {
+	_, err := c.ownSession(sessionID)
+	switch {
+	case err == nil:
+		return true
+	case errors.Is(err, pgx.ErrNoRows), errors.Is(err, errNotYours):
+		c.sendError("NO_ACTIVE_SESSION", "진행 중인 세션이 아닙니다.", msgID)
+	default:
+		c.internal("read session", err, msgID)
+	}
+	return false
+}
+
+func (c *conn) turn(sessionID uuid.UUID, clientID, text, msgID string) {
 	_, err := c.h.engine.HandleElderText(c.ctx, sessionID, text, &wsSink{c: c, clientID: clientID})
 	switch {
 	case err == nil:
@@ -408,16 +498,24 @@ func (c *conn) elderText(sessionID uuid.UUID, clientID, text, msgID string) {
 	case errors.Is(err, ErrSessionNotFound), errors.Is(err, ErrSessionEnded):
 		c.sendError("NO_ACTIVE_SESSION", "진행 중인 세션이 아닙니다.", msgID)
 	default:
-		c.log().Error("elder turn failed", "session_id", sessionID, "err", err)
-		c.sendError("INTERNAL", "서버 오류가 발생했습니다.", msgID)
+		c.internal("elder turn", err, msgID)
 	}
 }
 
-// elderAudio takes the binary frame that must follow elder.audio. Speech
-// recognition (Clova) arrives in stage 4; until then the audio is refused.
+// sttTimeout bounds one recognition; an utterance is at most a minute of audio.
+const sttTimeout = 10 * time.Second
+
+// elderAudio takes the binary frame that must follow elder.audio, then runs
+// speech recognition and the turn off the read loop.
 func (c *conn) elderAudio(env envelope) {
 	var d struct {
-		Audio struct{ Bytes int }
+		SessionID uuid.UUID
+		ClientID  string
+		Audio     struct {
+			Format       string
+			SampleRateHz int
+			Bytes        int
+		}
 	}
 	_ = json.Unmarshal(env.Data, &d)
 	rctx, cancel := context.WithTimeout(c.ctx, 10*time.Second)
@@ -434,7 +532,45 @@ func (c *conn) elderAudio(env envelope) {
 		}
 		return
 	}
-	c.sendError("STT_FAILED", "음성 인식은 아직 연결되지 않았습니다. 텍스트 모드(elder.text)를 쓰세요.", env.ID)
+	go func() {
+		if !c.checkSession(d.SessionID, env.ID) {
+			return
+		}
+		sctx, cancel := context.WithTimeout(c.ctx, sttTimeout)
+		start := time.Now()
+		text, err := c.h.cfg.STT.Recognize(sctx, audio, d.Audio.Format, d.Audio.SampleRateHz)
+		cancel()
+		if err != nil {
+			c.log().Error("speech recognition failed", "session_id", d.SessionID, "err", err)
+			c.sendError("STT_FAILED", "음성 인식에 실패했습니다.", env.ID)
+			return
+		}
+		c.log().Info("speech recognized", "session_id", d.SessionID, "bytes", len(audio), "stt_ms", time.Since(start).Milliseconds())
+		if strings.TrimSpace(text) == "" {
+			c.sendError("STT_FAILED", "말씀을 알아듣지 못했습니다.", env.ID)
+			return
+		}
+		c.turn(d.SessionID, d.ClientID, text, env.ID)
+	}()
+}
+
+// clientMetrics logs the latencies the tablet measured for one turn
+// (development-process.md stage 4: utterance end to sentence 0, sentence 0
+// end to sentence 1).
+func (c *conn) clientMetrics(data json.RawMessage) {
+	var d struct {
+		SessionID                uuid.UUID
+		TurnID                   int32
+		UtteranceEndToOpenerMs   *int
+		OpenerEndToFirstReplyMs  *int
+		UtteranceEndToFirstReply *int `json:"utteranceEndToFirstReplyMs"`
+	}
+	_ = json.Unmarshal(data, &d)
+	c.log().Info("turn latency",
+		"session_id", d.SessionID, "turn", d.TurnID,
+		"utterance_end_to_opener_ms", d.UtteranceEndToOpenerMs,
+		"opener_end_to_first_reply_ms", d.OpenerEndToFirstReplyMs,
+		"utterance_end_to_first_reply_ms", d.UtteranceEndToFirstReply)
 }
 
 // requestCompanion starts a companion session at the elder's button press.
@@ -459,7 +595,7 @@ func (c *conn) requestCompanion(msgID string) {
 		return
 	}
 	s, err := c.h.q.CreateCompanionSession(c.ctx, db.CreateCompanionSessionParams{
-		ElderID: c.tablet.ElderID, StartedBy: "ELDER", PromptVersion: &c.h.promptVersion,
+		ElderID: c.tablet.ElderID, StartedBy: "ELDER", PromptVersion: &c.h.cfg.PromptVersion,
 	})
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) && pgErr.Code == "23505" {
@@ -509,7 +645,8 @@ func (c *conn) internal(what string, err error, msgID string) {
 
 func ptr[T any](v T) *T { return &v }
 
-// wsSink sends a turn's events to the tablet.
+// wsSink sends a turn's events to the tablet, in order, through the
+// connection's event goroutine.
 type wsSink struct {
 	c        *conn
 	clientID string
@@ -520,24 +657,49 @@ func (s *wsSink) Transcript(u db.Utterance) {
 	if s.clientID != "" {
 		d["clientId"] = s.clientID
 	}
-	s.c.send("elder.transcript", d)
+	s.c.later(func() { s.c.send("elder.transcript", d) })
 }
 
 func (s *wsSink) Opener(u db.Utterance, clip db.OpenerClip) {
-	s.c.send("ai.opener", map[string]any{"sessionId": u.SessionID, "turnId": u.Seq, "clipId": clip.ID, "category": clip.Category})
+	s.c.later(func() {
+		s.c.send("ai.opener", map[string]any{"sessionId": u.SessionID, "turnId": u.Seq, "clipId": clip.ID, "category": clip.Category})
+	})
 }
 
 func (s *wsSink) Filler(sessionID uuid.UUID, turn int32, clip db.OpenerClip) {
-	s.c.send("ai.filler", map[string]any{"sessionId": sessionID, "turnId": turn, "clipId": clip.ID})
+	s.c.later(func() {
+		s.c.send("ai.filler", map[string]any{"sessionId": sessionID, "turnId": turn, "clipId": clip.ID})
+	})
 }
 
-// Reply sends a sentence without audio: TTS (Clova) arrives in stage 4.
+// ttsTimeout bounds one sentence's synthesis; past it the sentence goes as text.
+const ttsTimeout = 5 * time.Second
+
+// Reply synthesizes the sentence and sends it with its MP3. Without audio
+// (no Clova key, or TTS failed) the tablet still shows the text.
 func (s *wsSink) Reply(u db.Utterance) {
-	s.c.send("ai.reply", map[string]any{
-		"sessionId": u.SessionID, "turnId": u.Seq, "index": u.ChunkIndex, "utteranceId": u.ID, "text": u.Text, "audio": nil,
+	c := s.c
+	c.later(func() {
+		d := map[string]any{
+			"sessionId": u.SessionID, "turnId": u.Seq, "index": u.ChunkIndex, "utteranceId": u.ID, "text": u.Text, "audio": nil,
+		}
+		ctx, cancel := context.WithTimeout(c.ctx, ttsTimeout)
+		defer cancel()
+		mp3, err := c.h.cfg.TTS.Synthesize(ctx, u.Text, c.voice)
+		if err != nil {
+			if !errors.Is(err, speech.ErrUnavailable) {
+				c.log().Error("speech synthesis failed", "utterance_id", u.ID, "err", err)
+			}
+			c.send("ai.reply", d)
+			return
+		}
+		d["audio"] = map[string]any{"format": "mp3", "bytes": len(mp3)}
+		c.sendWithAudio("ai.reply", d, mp3)
 	})
 }
 
 func (s *wsSink) TurnEnd(sessionID uuid.UUID, turn int32, o Outcome, sentences int) {
-	s.c.send("ai.turn_end", map[string]any{"sessionId": sessionID, "turnId": turn, "outcome": o, "sentences": sentences})
+	s.c.later(func() {
+		s.c.send("ai.turn_end", map[string]any{"sessionId": sessionID, "turnId": turn, "outcome": o, "sentences": sentences})
+	})
 }

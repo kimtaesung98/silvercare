@@ -1,5 +1,5 @@
 name: voice
-description: "A new Flutter package project."
+description: "어르신 태블릿의 소리: 재생 큐, 0번 문장 음성 캐시, 녹음·발화 구간 감지"
 version: 0.0.1
 homepage:
 
@@ -12,6 +12,10 @@ resolution: workspace
 dependencies:
   flutter:
     sdk: flutter
+  # 재생(just_audio), 녹음(record), 0번 문장 캐시 폴더(path_provider)
+  just_audio: ^0.10.6
+  path_provider: ^2.1.6
+  record: ^7.1.1
 
 dev_dependencies:
   flutter_test:

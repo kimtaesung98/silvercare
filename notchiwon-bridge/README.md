@@ -99,12 +99,27 @@ docker compose up --build server
 cd app
 flutter pub get                       # workspace 전체 한 번에
 
-cd apps/elder_tablet && flutter run    # 어르신 태블릿
+# 어르신 태블릿: 서버 주소와 기기 토큰을 빌드할 때 넣습니다
+# (토큰은 POST /devices/{deviceId}/token으로 발급)
+cd apps/elder_tablet && flutter run \
+  --dart-define=SERVER_URL=http://10.0.2.2:8000 \
+  --dart-define=DEVICE_TOKEN=...
+
 cd apps/caregiver && flutter run       # 조무사 앱
 
 # 검사 (app/ 에서)
 dart format . && flutter analyze
-cd apps/elder_tablet && flutter test
+for pkg in apps/elder_tablet apps/caregiver packages/api_client packages/voice packages/ui; do
+  (cd "$pkg" && flutter test)
+done
+```
+
+어르신 태블릿은 켜면 바로 대화 화면이 뜨도록 키오스크(Lock Task)로 돌립니다.
+잠금은 태블릿을 기기 소유자(Device Owner)로 등록했을 때만 걸리고, 등록하지 않은
+기기에서는 보통 앱처럼 동작합니다. 0번 문장 음성은 서버에서 미리 합성해 두세요:
+
+```bash
+cd server && go run ./cmd/admin synth-openers
 ```
 
 ## CI
@@ -113,7 +128,7 @@ PR마다 `.github/workflows/server.yml`(gofmt, go vet, Postgres를 띄운 go tes
 
 ## 다음 단계
 
-[docs/development-process.md](docs/development-process.md)의 단계 4(태블릿 앱: 재생 큐, 0번 문장 캐시, Clova STT·TTS)입니다.
+[docs/development-process.md](docs/development-process.md)의 단계 5(조무사 앱: 방문 목록·지도·ETA, FCM 위급 알림, River 브리핑)입니다.
 
 ## 참고 문서
 - 기획서: `노치원_AI_브릿지_시스템_기획서.md`
