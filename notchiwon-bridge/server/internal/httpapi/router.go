@@ -19,6 +19,7 @@ import (
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/speech"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/visit"
 )
 
@@ -28,6 +29,8 @@ type Deps struct {
 	Visits  *visit.Service
 	Tokens  *auth.Tokens
 	Openers *opener.Library
+	// TTS synthesizes opener clip audio on first request.
+	TTS speech.Synthesizer
 	// ElderWS serves GET /ws/elder (internal/session.Hub).
 	ElderWS http.Handler
 	Logger  *slog.Logger

@@ -37,7 +37,27 @@ type Config struct {
 	FillerAfter          time.Duration `env:"CONVERSATION_FILLER_AFTER" envDefault:"2s"`
 	FirstSentenceTimeout time.Duration `env:"CONVERSATION_FIRST_SENTENCE_TIMEOUT" envDefault:"6s"`
 	TurnTimeout          time.Duration `env:"CONVERSATION_TURN_TIMEOUT" envDefault:"20s"`
+
+	Clova Clova
 }
+
+// Clova is Naver Clova speech. Without the keys the server runs in text
+// mode: elder.audio fails with STT_FAILED and replies carry no audio.
+type Clova struct {
+	ClientID       string `env:"NAVER_CLOVA_CLIENT_ID"`
+	ClientSecret   string `env:"NAVER_CLOVA_CLIENT_SECRET"`
+	STTURL         string `env:"CLOVA_STT_URL" envDefault:"https://naveropenapi.apigw.ntruss.com/recog/v1/stt"`
+	TTSURL         string `env:"CLOVA_TTS_URL" envDefault:"https://naveropenapi.apigw.ntruss.com/tts-premium/v1/tts"`
+	DefaultSpeaker string `env:"CLOVA_DEFAULT_SPEAKER" envDefault:"nara"`
+	// TTSSpeed is -5 (faster) .. 5 (slower).
+	TTSSpeed int `env:"CLOVA_TTS_SPEED" envDefault:"1"`
+}
+
+// Enabled reports whether both keys are set.
+func (c Clova) Enabled() bool { return c.ClientID != "" && c.ClientSecret != "" }
+
+// LoadClova reads only the Clova settings (for cmd/admin).
+func LoadClova() (Clova, error) { return env.ParseAs[Clova]() }
 
 // Load reads Config from the process environment and checks it.
 func Load() (Config, error) {
@@ -53,6 +73,9 @@ func Load() (Config, error) {
 	}
 	if cfg.FillerAfter <= 0 || cfg.FirstSentenceTimeout <= 0 || cfg.TurnTimeout < cfg.FirstSentenceTimeout {
 		return Config{}, errors.New("conversation timings must be positive, with CONVERSATION_TURN_TIMEOUT >= CONVERSATION_FIRST_SENTENCE_TIMEOUT")
+	}
+	if cfg.Clova.TTSSpeed < -5 || cfg.Clova.TTSSpeed > 5 {
+		return Config{}, errors.New("CLOVA_TTS_SPEED must be between -5 and 5")
 	}
 	if _, err := time.LoadLocation(cfg.TimeZone); err != nil {
 		return Config{}, err

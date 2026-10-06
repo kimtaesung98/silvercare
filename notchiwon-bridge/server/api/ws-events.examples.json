@@ -10,6 +10,7 @@
   {"type": "ai.reply", "data": {"sessionId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "turnId": 2, "index": 1, "utteranceId": "4d5e6f7a-8b9c-4d0e-9f1a-3b4c5d6e7f8a", "text": "손주가 와서 정말 반가우셨겠어요.", "audio": {"format": "mp3", "durationMs": 2200, "bytes": 17600}}},
   {"type": "ai.reply", "data": {"sessionId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "turnId": 2, "index": 2, "utteranceId": "5e6f7a8b-9c0d-4e1f-8a2b-4c5d6e7f8a9b", "text": "손주랑 무엇을 하셨어요?", "audio": null}},
   {"type": "elder.barge_in", "data": {"sessionId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "turnId": 2, "playedIndex": 1}},
+  {"type": "client.metrics", "data": {"sessionId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "turnId": 2, "utteranceEndToOpenerMs": 640, "openerEndToFirstReplyMs": 0, "utteranceEndToFirstReplyMs": 1820}},
   {"type": "ai.turn_end", "data": {"sessionId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "turnId": 2, "outcome": "CANCELLED", "sentences": 2}},
   {"type": "elder.text", "data": {"sessionId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "clientId": "u-5", "text": "화장실에서 넘어졌어"}},
   {"type": "ai.opener", "data": {"sessionId": "9a8b7c6d-5e4f-4a3b-8c2d-1e0f9a8b7c6d", "turnId": 4, "clipId": "6f7a8b9c-0d1e-4f2a-9b3c-5d6e7f8a9b0c", "category": "ESCALATION"}},

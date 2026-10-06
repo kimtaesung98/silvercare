@@ -31,6 +31,17 @@ func (q *Queries) GetOpenerClip(ctx context.Context, id uuid.UUID) (OpenerClip, 
 	return i, err
 }
 
+const getOpenerClipAudio = `-- name: GetOpenerClipAudio :one
+SELECT mp3 FROM opener_clip_audio WHERE clip_id = $1
+`
+
+func (q *Queries) GetOpenerClipAudio(ctx context.Context, clipID uuid.UUID) ([]byte, error) {
+	row := q.db.QueryRow(ctx, getOpenerClipAudio, clipID)
+	var mp3 []byte
+	err := row.Scan(&mp3)
+	return mp3, err
+}
+
 const listActiveOpenerClips = `-- name: ListActiveOpenerClips :many
 SELECT id, category, text, voice, audio_ref, duration_ms, active, created_at FROM opener_clip
 WHERE voice = $1
@@ -66,4 +77,60 @@ func (q *Queries) ListActiveOpenerClips(ctx context.Context, voice string) ([]Op
 		return nil, err
 	}
 	return items, nil
+}
+
+const listOpenerClipsWithoutAudio = `-- name: ListOpenerClipsWithoutAudio :many
+SELECT c.id, c.category, c.text, c.voice, c.audio_ref, c.duration_ms, c.active, c.created_at FROM opener_clip c
+LEFT JOIN opener_clip_audio a ON a.clip_id = c.id
+WHERE c.active AND a.clip_id IS NULL
+ORDER BY c.voice, c.category, c.id
+`
+
+// cmd/admin synth-openers가 합성할 클립.
+func (q *Queries) ListOpenerClipsWithoutAudio(ctx context.Context) ([]OpenerClip, error) {
+	rows, err := q.db.Query(ctx, listOpenerClipsWithoutAudio)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []OpenerClip{}
+	for rows.Next() {
+		var i OpenerClip
+		if err := rows.Scan(
+			&i.ID,
+			&i.Category,
+			&i.Text,
+			&i.Voice,
+			&i.AudioRef,
+			&i.DurationMs,
+			&i.Active,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const saveOpenerClipAudio = `-- name: SaveOpenerClipAudio :exec
+WITH saved AS (
+    INSERT INTO opener_clip_audio (clip_id, mp3) VALUES ($1, $2)
+    ON CONFLICT (clip_id) DO UPDATE SET mp3 = EXCLUDED.mp3, created_at = now()
+    RETURNING clip_id
+)
+UPDATE opener_clip SET audio_ref = 'db' WHERE id IN (SELECT clip_id FROM saved)
+`
+
+type SaveOpenerClipAudioParams struct {
+	ClipID uuid.UUID `json:"clip_id"`
+	Mp3    []byte    `json:"mp3"`
+}
+
+func (q *Queries) SaveOpenerClipAudio(ctx context.Context, arg SaveOpenerClipAudioParams) error {
+	_, err := q.db.Exec(ctx, saveOpenerClipAudio, arg.ClipID, arg.Mp3)
+	return err
 }

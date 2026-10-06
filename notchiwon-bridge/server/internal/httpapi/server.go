@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -13,6 +14,7 @@ import (
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/auth"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/db"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/speech"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/visit"
 )
 
@@ -278,9 +280,20 @@ func (s *Server) ListOpenerClips(ctx context.Context, _ apigen.ListOpenerClipsRe
 	return out, nil
 }
 
-// GetOpenerClipAudio is stage 4 (the clips are synthesized with Clova TTS then).
-func (s *Server) GetOpenerClipAudio(context.Context, apigen.GetOpenerClipAudioRequestObject) (apigen.GetOpenerClipAudioResponseObject, error) {
-	return nil, errNotImplemented
+// GetOpenerClipAudio implements GET /tablet/opener-clips/{clipId}/audio.
+// A clip without audio yet is synthesized with Clova TTS on first request.
+func (s *Server) GetOpenerClipAudio(ctx context.Context, req apigen.GetOpenerClipAudioRequestObject) (apigen.GetOpenerClipAudioResponseObject, error) {
+	mp3, err := s.deps.Openers.Audio(ctx, req.ClipId, s.deps.TTS)
+	switch {
+	case errors.Is(err, opener.ErrNoClip):
+		return apigen.GetOpenerClipAudio404JSONResponse{NotFoundJSONResponse: apigen.NotFoundJSONResponse(errNotFound)}, nil
+	case errors.Is(err, speech.ErrUnavailable):
+		return apigen.GetOpenerClipAudio404JSONResponse{NotFoundJSONResponse: apigen.NotFoundJSONResponse(
+			apiError("AUDIO_NOT_READY", "음성이 아직 준비되지 않았습니다."))}, nil
+	case err != nil:
+		return nil, err
+	}
+	return apigen.GetOpenerClipAudio200AudiompegResponse{Body: bytes.NewReader(mp3), ContentLength: int64(len(mp3))}, nil
 }
 
 // GetCompanionSchedule is stage 6.

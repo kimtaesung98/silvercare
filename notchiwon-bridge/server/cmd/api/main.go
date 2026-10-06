@@ -23,6 +23,7 @@ import (
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/migrate"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/opener"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/session"
+	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/speech"
 	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/visit"
 )
 
@@ -83,7 +84,17 @@ func run() error {
 		TurnTimeout:          cfg.TurnTimeout,
 		MaxSentences:         session.DefaultConfig.MaxSentences,
 	}, logger)
-	hub, err := session.NewHub(q, engine, openers, llm.PromptVersion, logger)
+	var (
+		stt speech.Recognizer  = speech.Unavailable{}
+		tts speech.Synthesizer = speech.Unavailable{}
+	)
+	if cfg.Clova.Enabled() {
+		clova := speech.NewClova(speech.ClovaConfig(cfg.Clova))
+		stt, tts = clova, clova
+	} else {
+		logger.Warn("NAVER_CLOVA_CLIENT_ID/SECRET are empty: text mode only (no speech recognition or synthesis)")
+	}
+	hub, err := session.NewHub(q, engine, openers, session.HubConfig{PromptVersion: llm.PromptVersion, STT: stt, TTS: tts}, logger)
 	if err != nil {
 		return err
 	}
@@ -103,6 +114,7 @@ func run() error {
 			Visits:  visits,
 			Tokens:  auth.NewTokens(cfg.AuthSecret, cfg.CaregiverTokenTTL),
 			Openers: openers,
+			TTS:     tts,
 			ElderWS: hub,
 			Logger:  logger,
 		}),

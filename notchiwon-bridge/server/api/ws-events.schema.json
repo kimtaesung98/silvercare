@@ -4,24 +4,63 @@
   "title": "노치원 브릿지 /ws/elder 텍스트 프레임",
   "description": "어르신 태블릿과 서버가 /ws/elder에서 주고받는 JSON 메시지. 설명은 ws-events.md를 참고하세요.",
   "oneOf": [
-    { "$ref": "#/$defs/connection.ready" },
-    { "$ref": "#/$defs/session.started" },
-    { "$ref": "#/$defs/session.rejected" },
-    { "$ref": "#/$defs/session.ended" },
-    { "$ref": "#/$defs/elder.transcript" },
-    { "$ref": "#/$defs/ai.opener" },
-    { "$ref": "#/$defs/ai.filler" },
-    { "$ref": "#/$defs/ai.reply" },
-    { "$ref": "#/$defs/ai.turn_end" },
-    { "$ref": "#/$defs/caregiver.eta" },
-    { "$ref": "#/$defs/error" },
-    { "$ref": "#/$defs/session.request" },
-    { "$ref": "#/$defs/session.end" },
-    { "$ref": "#/$defs/elder.audio" },
-    { "$ref": "#/$defs/elder.text" },
-    { "$ref": "#/$defs/elder.barge_in" },
-    { "$ref": "#/$defs/ping" },
-    { "$ref": "#/$defs/pong" }
+    {
+      "$ref": "#/$defs/connection.ready"
+    },
+    {
+      "$ref": "#/$defs/session.started"
+    },
+    {
+      "$ref": "#/$defs/session.rejected"
+    },
+    {
+      "$ref": "#/$defs/session.ended"
+    },
+    {
+      "$ref": "#/$defs/elder.transcript"
+    },
+    {
+      "$ref": "#/$defs/ai.opener"
+    },
+    {
+      "$ref": "#/$defs/ai.filler"
+    },
+    {
+      "$ref": "#/$defs/ai.reply"
+    },
+    {
+      "$ref": "#/$defs/ai.turn_end"
+    },
+    {
+      "$ref": "#/$defs/caregiver.eta"
+    },
+    {
+      "$ref": "#/$defs/error"
+    },
+    {
+      "$ref": "#/$defs/session.request"
+    },
+    {
+      "$ref": "#/$defs/session.end"
+    },
+    {
+      "$ref": "#/$defs/elder.audio"
+    },
+    {
+      "$ref": "#/$defs/elder.text"
+    },
+    {
+      "$ref": "#/$defs/elder.barge_in"
+    },
+    {
+      "$ref": "#/$defs/client.metrics"
+    },
+    {
+      "$ref": "#/$defs/ping"
+    },
+    {
+      "$ref": "#/$defs/pong"
+    }
   ],
   "$defs": {
     "uuid": {
@@ -34,25 +73,52 @@
       "minimum": 0
     },
     "sessionMode": {
-      "enum": ["PICKUP_BRIDGE", "COMPANION"]
+      "enum": [
+        "PICKUP_BRIDGE",
+        "COMPANION"
+      ]
     },
     "audio": {
       "description": "이 텍스트 프레임 바로 다음에 같은 쪽이 보내는 바이너리 프레임 1개의 형식과 길이",
       "type": "object",
-      "required": ["format", "bytes"],
+      "required": [
+        "format",
+        "bytes"
+      ],
       "additionalProperties": false,
       "properties": {
-        "format": { "enum": ["mp3", "pcm16", "opus", "aac"] },
-        "sampleRateHz": { "type": "integer", "minimum": 8000 },
-        "durationMs": { "type": "integer", "minimum": 1 },
-        "bytes": { "type": "integer", "minimum": 1 }
+        "format": {
+          "enum": [
+            "mp3",
+            "pcm16",
+            "opus",
+            "aac"
+          ]
+        },
+        "sampleRateHz": {
+          "type": "integer",
+          "minimum": 8000
+        },
+        "durationMs": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bytes": {
+          "type": "integer",
+          "minimum": 1
+        }
       }
     },
     "envelope": {
       "type": "object",
-      "required": ["type", "data"],
+      "required": [
+        "type",
+        "data"
+      ],
       "properties": {
-        "type": { "type": "string" },
+        "type": {
+          "type": "string"
+        },
         "id": {
           "description": "보낸 쪽이 붙이는 메시지 ID (선택). error.data.replyTo로 되돌아옵니다.",
           "type": "string",
@@ -63,33 +129,58 @@
           "type": "string",
           "format": "date-time"
         },
-        "data": { "type": "object" }
+        "data": {
+          "type": "object"
+        }
       }
     },
-
     "connection.ready": {
       "description": "서버 → 태블릿. 연결 직후 한 번. 재연결 시 진행 중 세션을 이어가는 데 씁니다.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "connection.ready" },
+        "type": {
+          "const": "connection.ready"
+        },
         "data": {
           "type": "object",
-          "required": ["deviceId", "elderId", "activeSession", "openerVersion"],
+          "required": [
+            "deviceId",
+            "elderId",
+            "activeSession",
+            "openerVersion"
+          ],
           "additionalProperties": false,
           "properties": {
-            "deviceId": { "$ref": "#/$defs/uuid" },
-            "elderId": { "$ref": "#/$defs/uuid" },
+            "deviceId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "elderId": {
+              "$ref": "#/$defs/uuid"
+            },
             "activeSession": {
               "oneOf": [
-                { "type": "null" },
+                {
+                  "type": "null"
+                },
                 {
                   "type": "object",
-                  "required": ["sessionId", "mode"],
+                  "required": [
+                    "sessionId",
+                    "mode"
+                  ],
                   "additionalProperties": false,
                   "properties": {
-                    "sessionId": { "$ref": "#/$defs/uuid" },
-                    "mode": { "$ref": "#/$defs/sessionMode" }
+                    "sessionId": {
+                      "$ref": "#/$defs/uuid"
+                    },
+                    "mode": {
+                      "$ref": "#/$defs/sessionMode"
+                    }
                   }
                 }
               ]
@@ -102,179 +193,338 @@
         }
       }
     },
-
     "session.started": {
       "description": "서버 → 태블릿. 세션 시작. 이어서 첫 인사가 턴 0의 ai.reply로 옵니다.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "session.started" },
+        "type": {
+          "const": "session.started"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "mode", "startedBy"],
+          "required": [
+            "sessionId",
+            "mode",
+            "startedBy"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
-            "mode": { "$ref": "#/$defs/sessionMode" },
-            "startedBy": { "enum": ["SYSTEM", "ELDER", "SCHEDULE"] },
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "mode": {
+              "$ref": "#/$defs/sessionMode"
+            },
+            "startedBy": {
+              "enum": [
+                "SYSTEM",
+                "ELDER",
+                "SCHEDULE"
+              ]
+            },
             "caregiverEtaMinutes": {
               "description": "픽업 대기 세션일 때 조무사 도착까지 남은 분",
-              "type": ["integer", "null"],
+              "type": [
+                "integer",
+                "null"
+              ],
               "minimum": 0
             }
           }
         }
       }
     },
-
     "session.rejected": {
       "description": "서버 → 태블릿. session.request를 받아들이지 않음.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
-      "unevaluatedProperties": false,
-      "properties": {
-        "type": { "const": "session.rejected" },
-        "data": {
-          "type": "object",
-          "required": ["reason"],
-          "additionalProperties": false,
-          "properties": {
-            "reason": { "enum": ["ALREADY_ACTIVE", "COMPANION_DISABLED", "BEDTIME", "TOKEN_LIMIT"] }
-          }
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
         }
-      }
-    },
-
-    "session.ended": {
-      "description": "서버 → 태블릿. 세션 종료. 남은 재생은 마무리 문장까지만 틀고 대기 화면으로 갑니다.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "session.ended" },
+        "type": {
+          "const": "session.rejected"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "reason"],
+          "required": [
+            "reason"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
             "reason": {
-              "enum": ["CAREGIVER_ARRIVED", "ELDER_DECLINED", "TIMEOUT", "ERROR", "NO_RESPONSE", "BEDTIME", "TOKEN_LIMIT", "PREEMPTED"]
+              "enum": [
+                "ALREADY_ACTIVE",
+                "COMPANION_DISABLED",
+                "BEDTIME",
+                "TOKEN_LIMIT"
+              ]
             }
           }
         }
       }
     },
-
-    "elder.transcript": {
-      "description": "서버 → 태블릿. 어르신 발화의 STT 결과 (화면 표시·디버깅용).",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+    "session.ended": {
+      "description": "서버 → 태블릿. 세션 종료. 남은 재생은 마무리 문장까지만 틀고 대기 화면으로 갑니다.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "elder.transcript" },
+        "type": {
+          "const": "session.ended"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "seq", "utteranceId", "text"],
+          "required": [
+            "sessionId",
+            "reason"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
-            "seq": { "type": "integer", "minimum": 0 },
-            "utteranceId": { "$ref": "#/$defs/uuid" },
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "reason": {
+              "enum": [
+                "CAREGIVER_ARRIVED",
+                "ELDER_DECLINED",
+                "TIMEOUT",
+                "ERROR",
+                "NO_RESPONSE",
+                "BEDTIME",
+                "TOKEN_LIMIT",
+                "PREEMPTED"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "elder.transcript": {
+      "description": "서버 → 태블릿. 어르신 발화의 STT 결과 (화면 표시·디버깅용).",
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "type": {
+          "const": "elder.transcript"
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "seq",
+            "utteranceId",
+            "text"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "seq": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "utteranceId": {
+              "$ref": "#/$defs/uuid"
+            },
             "clientId": {
               "description": "elder.audio / elder.text의 clientId",
               "type": "string",
               "maxLength": 64
             },
-            "text": { "type": "string" }
-          }
-        }
-      }
-    },
-
-    "ai.opener": {
-      "description": "서버 → 태블릿. 0번 문장. 태블릿은 캐시된 음성을 바로 재생합니다. 위급 감지면 category가 ESCALATION입니다.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
-      "unevaluatedProperties": false,
-      "properties": {
-        "type": { "const": "ai.opener" },
-        "data": {
-          "type": "object",
-          "required": ["sessionId", "turnId", "clipId", "category"],
-          "additionalProperties": false,
-          "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
-            "turnId": { "$ref": "#/$defs/turnId" },
-            "clipId": { "$ref": "#/$defs/uuid" },
-            "category": {
-              "enum": ["RECALL", "QUESTION", "EMOTION", "SHORT_ANSWER", "GREETING", "ESCALATION"]
+            "text": {
+              "type": "string"
             }
           }
         }
       }
     },
-
-    "ai.filler": {
-      "description": "서버 → 태블릿. 1번 문장이 늦을 때 한 번 더 트는 추임새 (캐시된 FILLER 음성).",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+    "ai.opener": {
+      "description": "서버 → 태블릿. 0번 문장. 태블릿은 캐시된 음성을 바로 재생합니다. 위급 감지면 category가 ESCALATION입니다.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "ai.filler" },
+        "type": {
+          "const": "ai.opener"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "turnId", "clipId"],
+          "required": [
+            "sessionId",
+            "turnId",
+            "clipId",
+            "category"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
-            "turnId": { "$ref": "#/$defs/turnId" },
-            "clipId": { "$ref": "#/$defs/uuid" }
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "turnId": {
+              "$ref": "#/$defs/turnId"
+            },
+            "clipId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "category": {
+              "enum": [
+                "RECALL",
+                "QUESTION",
+                "EMOTION",
+                "SHORT_ANSWER",
+                "GREETING",
+                "ESCALATION"
+              ]
+            }
           }
         }
       }
     },
-
-    "ai.reply": {
-      "description": "서버 → 태블릿. 스트리밍 문장 하나(1번부터). audio가 있으면 바로 다음 바이너리 프레임이 그 TTS 음성입니다.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+    "ai.filler": {
+      "description": "서버 → 태블릿. 1번 문장이 늦을 때 한 번 더 트는 추임새 (캐시된 FILLER 음성).",
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "ai.reply" },
+        "type": {
+          "const": "ai.filler"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "turnId", "index", "utteranceId", "text", "audio"],
+          "required": [
+            "sessionId",
+            "turnId",
+            "clipId"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
-            "turnId": { "$ref": "#/$defs/turnId" },
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "turnId": {
+              "$ref": "#/$defs/turnId"
+            },
+            "clipId": {
+              "$ref": "#/$defs/uuid"
+            }
+          }
+        }
+      }
+    },
+    "ai.reply": {
+      "description": "서버 → 태블릿. 스트리밍 문장 하나(1번부터). audio가 있으면 바로 다음 바이너리 프레임이 그 TTS 음성입니다.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "type": {
+          "const": "ai.reply"
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "sessionId",
+            "turnId",
+            "index",
+            "utteranceId",
+            "text",
+            "audio"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "turnId": {
+              "$ref": "#/$defs/turnId"
+            },
             "index": {
               "description": "턴 안의 문장 번호. 0번은 ai.opener이므로 1부터. utterance.chunk_index와 같습니다.",
               "type": "integer",
               "minimum": 1
             },
-            "utteranceId": { "$ref": "#/$defs/uuid" },
-            "text": { "type": "string", "minLength": 1 },
+            "utteranceId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1
+            },
             "audio": {
               "description": "텍스트 모드(단계 3 개발용)에서는 null",
-              "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/audio" }]
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "#/$defs/audio"
+                }
+              ]
             }
           }
         }
       }
     },
-
     "ai.turn_end": {
       "description": "서버 → 태블릿. 이 턴에 더 올 문장이 없음.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "ai.turn_end" },
+        "type": {
+          "const": "ai.turn_end"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "turnId", "outcome", "sentences"],
+          "required": [
+            "sessionId",
+            "turnId",
+            "outcome",
+            "sentences"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
-            "turnId": { "$ref": "#/$defs/turnId" },
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "turnId": {
+              "$ref": "#/$defs/turnId"
+            },
             "outcome": {
               "description": "COMPLETED 정상, FALLBACK 시간 초과·오류로 대체 문장, ESCALATED 위급 감지로 안심 문장, CANCELLED 끼어들기로 중단",
-              "enum": ["COMPLETED", "FALLBACK", "ESCALATED", "CANCELLED"]
+              "enum": [
+                "COMPLETED",
+                "FALLBACK",
+                "ESCALATED",
+                "CANCELLED"
+              ]
             },
             "sentences": {
               "description": "이 턴에 보낸 ai.reply 수",
@@ -285,41 +535,73 @@
         }
       }
     },
-
     "caregiver.eta": {
       "description": "서버 → 태블릿. 픽업 대기 중 조무사 도착까지 남은 분 (바뀔 때만).",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "caregiver.eta" },
+        "type": {
+          "const": "caregiver.eta"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "visitId", "minutes"],
+          "required": [
+            "sessionId",
+            "visitId",
+            "minutes"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
-            "visitId": { "$ref": "#/$defs/uuid" },
-            "minutes": { "type": "integer", "minimum": 0 }
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "visitId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "minutes": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         }
       }
     },
-
     "error": {
       "description": "서버 → 태블릿. 받은 메시지를 처리하지 못함. 연결은 유지합니다.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "error" },
+        "type": {
+          "const": "error"
+        },
         "data": {
           "type": "object",
-          "required": ["code", "message"],
+          "required": [
+            "code",
+            "message"
+          ],
           "additionalProperties": false,
           "properties": {
             "code": {
-              "enum": ["INVALID_MESSAGE", "NO_ACTIVE_SESSION", "AUDIO_FRAME_MISSING", "STT_FAILED", "INTERNAL"]
+              "enum": [
+                "INVALID_MESSAGE",
+                "NO_ACTIVE_SESSION",
+                "AUDIO_FRAME_MISSING",
+                "STT_FAILED",
+                "INTERNAL"
+              ]
             },
-            "message": { "type": "string" },
+            "message": {
+              "type": "string"
+            },
             "replyTo": {
               "description": "원인이 된 메시지의 id",
               "type": "string",
@@ -329,96 +611,158 @@
         }
       }
     },
-
     "session.request": {
       "description": "태블릿 → 서버. 말동무 버튼을 누름.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "session.request" },
+        "type": {
+          "const": "session.request"
+        },
         "data": {
           "type": "object",
-          "required": ["mode"],
+          "required": [
+            "mode"
+          ],
           "additionalProperties": false,
           "properties": {
-            "mode": { "const": "COMPANION" }
+            "mode": {
+              "const": "COMPANION"
+            }
           }
         }
       }
     },
-
     "session.end": {
       "description": "태블릿 → 서버. 어르신이 그만하기 버튼을 누름 (말동무 모드).",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "session.end" },
+        "type": {
+          "const": "session.end"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId"],
+          "required": [
+            "sessionId"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" }
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            }
           }
         }
       }
     },
-
     "elder.audio": {
       "description": "태블릿 → 서버. 발화 한 구간. 바로 다음 바이너리 프레임이 그 오디오입니다.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "elder.audio" },
+        "type": {
+          "const": "elder.audio"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "clientId", "audio"],
+          "required": [
+            "sessionId",
+            "clientId",
+            "audio"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
             "clientId": {
               "description": "태블릿이 붙이는 발화 ID. elder.transcript에 되돌아옵니다.",
               "type": "string",
               "maxLength": 64
             },
-            "audio": { "$ref": "#/$defs/audio" }
+            "audio": {
+              "$ref": "#/$defs/audio"
+            }
           }
         }
       }
     },
-
     "elder.text": {
       "description": "태블릿(또는 개발용 CLI) → 서버. 텍스트 모드 발화 (단계 3).",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "elder.text" },
+        "type": {
+          "const": "elder.text"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "clientId", "text"],
+          "required": [
+            "sessionId",
+            "clientId",
+            "text"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
-            "clientId": { "type": "string", "maxLength": 64 },
-            "text": { "type": "string", "minLength": 1, "maxLength": 2000 }
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "clientId": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            }
           }
         }
       }
     },
-
     "elder.barge_in": {
       "description": "태블릿 → 서버. 재생 중 어르신이 말을 시작함. 서버는 그 턴의 남은 문장 생성을 멈춥니다.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "elder.barge_in" },
+        "type": {
+          "const": "elder.barge_in"
+        },
         "data": {
           "type": "object",
-          "required": ["sessionId", "turnId", "playedIndex"],
+          "required": [
+            "sessionId",
+            "turnId",
+            "playedIndex"
+          ],
           "additionalProperties": false,
           "properties": {
-            "sessionId": { "$ref": "#/$defs/uuid" },
-            "turnId": { "$ref": "#/$defs/turnId" },
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "turnId": {
+              "$ref": "#/$defs/turnId"
+            },
             "playedIndex": {
               "description": "끊기기 전 마지막으로 재생을 시작한 문장 번호 (0 = 0번 문장)",
               "type": "integer",
@@ -428,35 +772,109 @@
         }
       }
     },
-
-    "ping": {
-      "description": "양방향. 받은 쪽은 같은 nonce로 pong을 보냅니다.",
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+    "client.metrics": {
+      "description": "태블릿 → 서버. 한 턴의 체감 지연을 잰 값 (단계 4 측정). 서버는 로그로 남깁니다.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "ping" },
+        "type": {
+          "const": "client.metrics"
+        },
         "data": {
           "type": "object",
-          "required": ["nonce"],
+          "required": [
+            "sessionId",
+            "turnId"
+          ],
           "additionalProperties": false,
           "properties": {
-            "nonce": { "type": "string", "maxLength": 64 }
+            "sessionId": {
+              "$ref": "#/$defs/uuid"
+            },
+            "turnId": {
+              "$ref": "#/$defs/turnId"
+            },
+            "utteranceEndToOpenerMs": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "발화 끝(녹음 종료) → 0번 문장 재생 시작"
+            },
+            "openerEndToFirstReplyMs": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "0번 문장 재생 끝 → 1번 문장 재생 시작 (바로 이어졌으면 0)"
+            },
+            "utteranceEndToFirstReplyMs": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "description": "발화 끝 → 1번 문장 재생 시작"
+            }
           }
         }
       }
     },
-
-    "pong": {
-      "allOf": [{ "$ref": "#/$defs/envelope" }],
+    "ping": {
+      "description": "양방향. 받은 쪽은 같은 nonce로 pong을 보냅니다.",
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
       "unevaluatedProperties": false,
       "properties": {
-        "type": { "const": "pong" },
+        "type": {
+          "const": "ping"
+        },
         "data": {
           "type": "object",
-          "required": ["nonce"],
+          "required": [
+            "nonce"
+          ],
           "additionalProperties": false,
           "properties": {
-            "nonce": { "type": "string", "maxLength": 64 }
+            "nonce": {
+              "type": "string",
+              "maxLength": 64
+            }
+          }
+        }
+      }
+    },
+    "pong": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/envelope"
+        }
+      ],
+      "unevaluatedProperties": false,
+      "properties": {
+        "type": {
+          "const": "pong"
+        },
+        "data": {
+          "type": "object",
+          "required": [
+            "nonce"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "nonce": {
+              "type": "string",
+              "maxLength": 64
+            }
           }
         }
       }

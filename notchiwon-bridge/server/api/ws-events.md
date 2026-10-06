@@ -62,6 +62,7 @@
 | `elder.audio` | 발화 한 구간이 끝남 (다음 프레임이 오디오) | `sessionId`, `clientId`, `audio` |
 | `elder.text` | 텍스트 모드 발화 (단계 3 개발용 CLI) | `sessionId`, `clientId`, `text` |
 | `elder.barge_in` | 재생 중 어르신이 말을 시작함 | `sessionId`, `turnId`, `playedIndex` |
+| `client.metrics` | 한 턴이 끝난 뒤 잰 지연 (서버는 로그로 남김) | `sessionId`, `turnId`, `utteranceEndToOpenerMs`, `openerEndToFirstReplyMs`, `utteranceEndToFirstReplyMs` |
 
 ### 양방향
 
@@ -100,7 +101,8 @@
 - **0번 문장이 없을 때**: 어르신 목소리에 그 유형의 클립이 없으면 `ai.opener` 없이 `ai.reply` 1번부터 옵니다. 위급 감지인데 ESCALATION 클립이 없으면 안심 문장이 `ai.reply` 1번으로 오고 `ai.turn_end {ESCALATED, sentences: 1}`입니다.
 - **새 발화**: 턴이 끝나기 전에 새 `elder.text`가 오면 끼어들기와 같이 앞 턴을 `CANCELLED`로 끝내고 새 턴을 시작합니다.
 
-> 단계 3 서버 구현 기준: `elder.audio`는 바이너리 프레임 짝만 확인하고 `error {STT_FAILED}`로 답합니다(Clova 연결은 단계 4). `session.end`는 말동무 세션만 끝내며, 픽업 대기 세션에 보내면 `error {INVALID_MESSAGE}`입니다. 말동무 요청의 취침 시간·토큰 한도 확인은 단계 6입니다.
+- **음성**: `elder.audio`는 Clova CSR로 글자로 바꾼 뒤(`pcm16`은 서버가 WAV로 감쌈) `elder.text`와 같은 흐름을 탑니다. 인식에 실패하거나 빈 글자면 `error {STT_FAILED}`입니다. `ai.reply`는 문장마다 Clova Voice MP3를 붙이고, 합성이 실패하면(또는 서버에 Clova 키가 없으면) `audio: null`로 글자만 보냅니다.
+- `session.end`는 말동무 세션만 끝내며, 픽업 대기 세션에 보내면 `error {INVALID_MESSAGE}`입니다. 말동무 요청의 취침 시간·토큰 한도 확인은 단계 6입니다.
 
 ## 6. 세션 흐름
 
