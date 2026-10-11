@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import 'speech_input.dart';
+
 /// 마이크에서 PCM 조각을 내보내는 장치. 실제 구현은 `record` 패키지를 쓰고,
 /// 테스트는 가짜를 씁니다.
 abstract class MicrophonePort {
@@ -138,11 +140,12 @@ class SpeechSegmenter {
   }
 }
 
-/// 마이크를 열고 발화 한 구간이 끝날 때마다 PCM을 내보냅니다.
+/// 마이크를 열고 발화 한 구간이 끝날 때마다 PCM을 내보냅니다. 서버가 음성
+/// 인식을 할 때 쓰는 [SpeechInput]입니다.
 ///
 /// 말동무 모드에서는 대화 중에만 마이크를 엽니다 (집 안 사생활 보호,
 /// architecture.md 6.4절).
-class UtteranceRecorder {
+class UtteranceRecorder implements SpeechInput {
   UtteranceRecorder(this._mic, {SegmenterConfig? config})
     : _segmenter = SpeechSegmenter(config: config ?? const SegmenterConfig());
 
@@ -157,12 +160,17 @@ class UtteranceRecorder {
   /// 끝난 발화 한 구간.
   Stream<Uint8List> get utterances => _utterances.stream;
 
+  @override
+  Stream<Heard> get heard => utterances.map(HeardAudio.new);
+
   /// 어르신이 말을 시작했다는 신호 (끼어들기 판단에 씁니다).
+  @override
   Stream<void> get speechStarted => _speechStarted.stream;
 
   bool get isRecording => _sub != null;
 
   /// 마이크를 엽니다.
+  @override
   Future<void> start() async {
     if (_sub != null) return;
     final stream = await _mic.start();
@@ -170,6 +178,7 @@ class UtteranceRecorder {
   }
 
   /// 마이크를 닫습니다.
+  @override
   Future<void> stop() async {
     await _sub?.cancel();
     _sub = null;
@@ -179,13 +188,16 @@ class UtteranceRecorder {
 
   /// AI가 말하는 동안 마이크 입력을 무시할지. 스피커 소리가 마이크로 들어오는
   /// 태블릿에서 끼어들기가 잘못 잡히는 것을 막습니다.
+  @override
   set muted(bool value) {
     _muted = value;
     if (value) _segmenter.reset();
   }
 
+  @override
   bool get muted => _muted;
 
+  @override
   Future<void> close() async {
     await stop();
     await _utterances.close();

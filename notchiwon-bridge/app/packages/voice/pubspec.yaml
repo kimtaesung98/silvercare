@@ -13,9 +13,11 @@ dependencies:
   flutter:
     sdk: flutter
   # 재생(just_audio), 녹음(record), 0번 문장 캐시 폴더(path_provider)
+  flutter_tts: ^4.2.5
   just_audio: ^0.10.6
   path_provider: ^2.1.6
   record: ^7.1.1
+  speech_to_text: ^7.5.0
 
 dev_dependencies:
   flutter_test:

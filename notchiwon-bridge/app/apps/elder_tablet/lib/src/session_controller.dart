@@ -29,7 +29,8 @@ class TabletInfo {
 }
 
 /// 태블릿의 대화 상태를 모읍니다: WebSocket 이벤트를 받아 재생 큐에 넣고,
-/// 마이크가 잡은 발화를 서버로 보냅니다.
+/// 어르신 발화를 서버로 보냅니다 (녹음이면 `elder.audio`, 기기가 알아들은
+/// 글자면 `elder.text`).
 ///
 /// 화면은 이 객체만 보고 그립니다.
 class SessionController extends ChangeNotifier {
@@ -37,7 +38,7 @@ class SessionController extends ChangeNotifier {
     required this.socket,
     required this.queue,
     required this.clips,
-    required this.recorder,
+    required this.input,
     this.loadInfo,
     this.arrivingMinutes = 2,
     this.muteWhileSpeaking = true,
@@ -52,8 +53,8 @@ class SessionController extends ChangeNotifier {
   /// 0번 문장 음성 캐시.
   final ClipCache clips;
 
-  /// 마이크.
-  final UtteranceRecorder recorder;
+  /// 어르신 말을 듣는 장치: 서버 음성 인식용 녹음기나 기기 음성 인식.
+  final SpeechInput input;
 
   /// 기기·어르신 정보를 받아오는 통로 (없으면 기본 호칭을 씁니다).
   final Future<TabletInfo> Function()? loadInfo;
@@ -135,8 +136,8 @@ class SessionController extends ChangeNotifier {
       ..add(socket.states.listen(_onState))
       ..add(queue.started.listen(_onPlaybackStarted))
       ..add(queue.finished.listen(_onPlaybackFinished))
-      ..add(recorder.utterances.listen(_onUtterance))
-      ..add(recorder.speechStarted.listen((_) => _onSpeechStarted()));
+      ..add(input.heard.listen(_onHeard))
+      ..add(input.speechStarted.listen((_) => _onSpeechStarted()));
     unawaited(_loadTabletInfo());
     await socket.start();
   }
@@ -169,7 +170,7 @@ class SessionController extends ChangeNotifier {
     for (final s in _subs) {
       unawaited(s.cancel());
     }
-    unawaited(recorder.close());
+    unawaited(input.close());
     unawaited(queue.close());
     unawaited(socket.close());
     super.dispose();
@@ -222,7 +223,7 @@ class SessionController extends ChangeNotifier {
       case AiOpener(:final turnId, :final clipId):
         _turnId = turnId;
         _playedIndex = 0;
-        if (muteWhileSpeaking) recorder.muted = true;
+        if (muteWhileSpeaking) input.muted = true;
         queue.add(
           PlayItem.clip(
             turnId: turnId,
@@ -235,7 +236,7 @@ class SessionController extends ChangeNotifier {
         queue.add(PlayItem.clip(turnId: turnId, index: -1, clipId: clipId));
       case AiReply(:final turnId, :final index, :final text, :final audio):
         _turnId = turnId;
-        if (muteWhileSpeaking) recorder.muted = true;
+        if (muteWhileSpeaking) input.muted = true;
         queue.add(
           PlayItem(turnId: turnId, index: index, audio: audio, text: text),
         );
@@ -261,7 +262,7 @@ class SessionController extends ChangeNotifier {
     _mode = mode;
     _etaMinutes = eta;
     _notice = null;
-    unawaited(recorder.start());
+    unawaited(input.start());
     notifyListeners();
   }
 
@@ -270,7 +271,7 @@ class SessionController extends ChangeNotifier {
     _mode = null;
     _etaMinutes = null;
     await queue.clear();
-    await recorder.stop();
+    await input.stop();
     notifyListeners();
   }
 
@@ -299,7 +300,7 @@ class SessionController extends ChangeNotifier {
     if (item.index == 0) _openerEnd = DateTime.now();
     if (muteWhileSpeaking && !queue.isBusy) {
       // AI가 말을 멈췄으니 다시 듣습니다.
-      recorder.muted = false;
+      input.muted = false;
     }
     notifyListeners();
   }
@@ -319,16 +320,25 @@ class SessionController extends ChangeNotifier {
     unawaited(queue.cancelTurn(_turnId));
   }
 
-  void _onUtterance(Uint8List pcm) {
+  void _onHeard(Heard heard) {
     final id = _sessionId;
     if (id == null) return;
     _utteranceEnd = DateTime.now();
     _utteranceEndToOpenerMs = null;
     _openerEndToFirstReplyMs = null;
-    socket.send(
-      ElderCommand.audio(sessionId: id, clientId: _nextId(), audio: pcm),
-      id: _nextId(),
-    );
+    final command = switch (heard) {
+      HeardAudio(:final pcm) => ElderCommand.audio(
+        sessionId: id,
+        clientId: _nextId(),
+        audio: pcm,
+      ),
+      HeardText(:final text) => ElderCommand.text(
+        sessionId: id,
+        clientId: _nextId(),
+        text: text,
+      ),
+    };
+    socket.send(command, id: _nextId());
   }
 
   void _sendMetrics(int turnId) {

@@ -25,23 +25,25 @@ void main() {
     await settle();
   }
 
-  SessionController newController({bool muteWhileSpeaking = true}) =>
-      SessionController(
-        socket: ElderSocket(
-          serverUrl: Uri.parse('http://server'),
-          token: 't',
-          connect: (_, _) async => channel,
-        ),
-        queue: PlaybackQueue(player),
-        clips: ClipCache(
-          source: FakeClipSource(texts: {'clip-recall-1': '그러셨어요?'}),
-          store: MemoryClipStore(),
-        ),
-        recorder: UtteranceRecorder(mic),
-        loadInfo: () async =>
-            const TabletInfo(elderName: '김영자', companionEnabled: true),
-        muteWhileSpeaking: muteWhileSpeaking,
-      );
+  SessionController newController({
+    bool muteWhileSpeaking = true,
+    SpeechInput? input,
+  }) => SessionController(
+    socket: ElderSocket(
+      serverUrl: Uri.parse('http://server'),
+      token: 't',
+      connect: (_, _) async => channel,
+    ),
+    queue: PlaybackQueue(player),
+    clips: ClipCache(
+      source: FakeClipSource(texts: {'clip-recall-1': '그러셨어요?'}),
+      store: MemoryClipStore(),
+    ),
+    input: input ?? UtteranceRecorder(mic),
+    loadInfo: () async =>
+        const TabletInfo(elderName: '김영자', companionEnabled: true),
+    muteWhileSpeaking: muteWhileSpeaking,
+  );
 
   setUp(() async {
     channel = FakeChannel();
@@ -226,5 +228,65 @@ void main() {
 
     expect(controller.screen, ScreenState.idle);
     expect(mic.stopped, 1);
+  });
+
+  group('기기 음성 인식 (Clova 없이)', () {
+    late FakeRecognizer recognizer;
+
+    setUp(() async {
+      controller.dispose();
+      channel = FakeChannel();
+      recognizer = FakeRecognizer();
+      controller = newController(input: DeviceSpeechInput(recognizer));
+      await controller.start();
+      await settle();
+    });
+
+    test('알아들은 말을 elder.text로 보낸다', () async {
+      await startSession();
+      expect(recognizer.listening, isTrue);
+
+      recognizer.say('오늘 병원 다녀왔어');
+      await settle();
+
+      final sent = channel.lastSent('elder.text');
+      expect(sent, isNotNull);
+      final data = (sent!['data'] as Map).cast<String, dynamic>();
+      expect(data['sessionId'], 's-1');
+      expect(data['text'], '오늘 병원 다녀왔어');
+      expect(channel.lastSent('elder.audio'), isNull);
+    });
+
+    test('AI가 말하는 동안은 듣지 않고, 다 말하면 다시 듣는다', () async {
+      await startSession();
+      player.hold = true;
+      channel.serverSendsEvent('ai.reply', {
+        'sessionId': 's-1',
+        'turnId': 1,
+        'index': 1,
+        'utteranceId': 'u-1',
+        'text': '병원은 어떠셨어요?',
+      });
+      await settle();
+
+      expect(recognizer.listening, isFalse);
+      expect(recognizer.cancels, greaterThan(0));
+
+      player.finish();
+      await settle();
+
+      expect(recognizer.listening, isTrue);
+    });
+
+    test('세션이 끝나면 음성 인식을 멈춘다', () async {
+      await startSession();
+      channel.serverSendsEvent('session.ended', {
+        'sessionId': 's-1',
+        'reason': 'ELDER_ENDED',
+      });
+      await settle();
+
+      expect(recognizer.listening, isFalse);
+    });
   });
 }

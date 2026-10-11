@@ -58,7 +58,7 @@ report() {
 # 앱 실행용 값. 예전에 만든 .env에 줄이 없으면 check가 빈 줄을 붙여 둡니다.
 APP_KEYS="APP_SERVER_URL DEVICE_TOKEN CAREGIVER_LOGIN CAREGIVER_PASSWORD GUARDIAN_LOGIN GUARDIAN_PASSWORD
   FIREBASE_API_KEY FIREBASE_SENDER_ID FIREBASE_PROJECT_ID CAREGIVER_FIREBASE_APP_ID GUARDIAN_FIREBASE_APP_ID
-  TABLET_DEVICE CAREGIVER_DEVICE GUARDIAN_DEVICE"
+  TABLET_DEVICE CAREGIVER_DEVICE GUARDIAN_DEVICE TABLET_SPEECH"
 
 cmd_check() {
   load_env
@@ -81,6 +81,13 @@ cmd_check() {
   report "앱 Firebase (없으면 푸시 없이)" FIREBASE_API_KEY FIREBASE_SENDER_ID FIREBASE_PROJECT_ID \
     CAREGIVER_FIREBASE_APP_ID GUARDIAN_FIREBASE_APP_ID
   report "기기 id (없으면 flutter가 물음)" TABLET_DEVICE CAREGIVER_DEVICE GUARDIAN_DEVICE
+  echo "[태블릿 음성]"
+  echo "  어르신 말 알아듣기: $(tablet_speech) (TABLET_SPEECH로 바꿀 수 있음)"
+  if [ -n "${NAVER_CLOVA_CLIENT_ID:-}" ] && [ -n "${NAVER_CLOVA_CLIENT_SECRET:-}" ]; then
+    echo "  AI 목소리: Clova"
+  else
+    echo "  AI 목소리: 태블릿 내장 TTS"
+  fi
   if [ -n "${AUTH_SECRET:-}" ] && [ "${#AUTH_SECRET}" -lt 32 ]; then
     echo "주의: AUTH_SECRET이 32자보다 짧아 서버가 시작하지 않습니다 (openssl rand -base64 48)"
   fi
@@ -159,10 +166,29 @@ firebase_defines() {
   fi
 }
 
+# tablet_speech: 태블릿이 어르신 말을 알아듣는 방식. TABLET_SPEECH가 비면
+# Clova 키가 있을 때 server(서버가 Clova로), 없을 때 device(태블릿 내장 음성 인식).
+tablet_speech() {
+  if [ -n "${TABLET_SPEECH:-}" ]; then
+    echo "$TABLET_SPEECH"
+  elif [ -n "${NAVER_CLOVA_CLIENT_ID:-}" ] && [ -n "${NAVER_CLOVA_CLIENT_SECRET:-}" ]; then
+    echo server
+  else
+    echo device
+  fi
+}
+
 cmd_tablet() {
   load_env
   [ -n "${DEVICE_TOKEN:-}" ] || die "DEVICE_TOKEN이 비어 있습니다. 먼저 scripts/dev.sh seed"
-  run_app elder_tablet "${TABLET_DEVICE:-}" "--dart-define=DEVICE_TOKEN=$DEVICE_TOKEN"
+  local speech
+  speech="$(tablet_speech)"
+  case "$speech" in
+    device | server) ;;
+    *) die "TABLET_SPEECH는 device나 server여야 합니다: $speech" ;;
+  esac
+  echo "dev.sh: 어르신 말 알아듣기 = $speech"
+  run_app elder_tablet "${TABLET_DEVICE:-}" "--dart-define=DEVICE_TOKEN=$DEVICE_TOKEN" "--dart-define=SPEECH=$speech"
 }
 
 cmd_phone_app() {

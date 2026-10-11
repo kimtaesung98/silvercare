@@ -1,5 +1,5 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- 어르신 발화를 녹음해 서버 STT로 보냅니다. -->
+    <!-- 어르신 말을 태블릿 음성 인식으로 알아듣거나, 녹음해 서버 STT로 보냅니다. -->
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <uses-permission android:name="android.permission.INTERNET"/>
     <!-- 대화 중에는 화면이 꺼져도 앱이 살아 있어야 합니다. -->
@@ -57,6 +57,13 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- 태블릿 내장 음성 인식(speech_to_text)과 TTS(flutter_tts)를 찾습니다. -->
+        <intent>
+            <action android:name="android.speech.RecognitionService"/>
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE"/>
         </intent>
     </queries>
 </manifest>

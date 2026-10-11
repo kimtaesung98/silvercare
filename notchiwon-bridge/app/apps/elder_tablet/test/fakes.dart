@@ -190,3 +190,33 @@ class FakeClipSource implements ClipSource {
   Future<Uint8List?> audio(String clipId) async =>
       texts.containsKey(clipId) ? Uint8List.fromList([1, 2, 3]) : null;
 }
+
+/// 테스트가 "들린 말"을 정해 주는 기기 음성 인식 엔진.
+class FakeRecognizer implements SpeechRecognizerPort {
+  var listens = 0;
+  var cancels = 0;
+  Completer<String?>? _current;
+
+  bool get listening => _current != null;
+
+  @override
+  Future<String?> listen({void Function()? onSpeech}) {
+    listens++;
+    return (_current = Completer<String?>()).future;
+  }
+
+  @override
+  Future<void> cancel() async {
+    cancels++;
+    _end(null);
+  }
+
+  /// 어르신이 [text]라고 말하고 멈춘 것으로 칩니다.
+  void say(String text) => _end(text);
+
+  void _end(String? text) {
+    final current = _current;
+    _current = null;
+    if (current != null && !current.isCompleted) current.complete(text);
+  }
+}
