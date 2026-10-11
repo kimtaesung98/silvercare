@@ -118,9 +118,13 @@ flutter pub get                       # workspace 전체 한 번에
 
 # 어르신 태블릿: 서버 주소와 기기 토큰을 빌드할 때 넣습니다
 # (토큰은 POST /devices/{deviceId}/token으로 발급)
+# SPEECH=device(기본)는 태블릿 내장 음성 인식이 알아듣고 글자로 보내고,
+# SPEECH=server는 녹음을 보내 서버가 Clova로 알아듣습니다. AI 목소리는 서버가
+# Clova로 만든 음성이 없으면 태블릿 내장 TTS로 읽습니다.
 cd apps/elder_tablet && flutter run \
   --dart-define=SERVER_URL=http://10.0.2.2:8000 \
-  --dart-define=DEVICE_TOKEN=...
+  --dart-define=DEVICE_TOKEN=... \
+  --dart-define=SPEECH=device
 
 # 조무사 앱: Firebase 값은 Firebase 콘솔 > 프로젝트 설정 > Android 앱(kr.notchiwon.caregiver)에서.
 # 비워 두면 푸시 없이 동작하고 위급 알림은 홈 화면 목록으로만 봅니다.

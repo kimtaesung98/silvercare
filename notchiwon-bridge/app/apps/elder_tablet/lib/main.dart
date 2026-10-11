@@ -19,6 +19,16 @@ const serverUrl = String.fromEnvironment(
 /// 기기 토큰. `POST /devices/{deviceId}/token`으로 발급한 값을 넣습니다.
 const deviceToken = String.fromEnvironment('DEVICE_TOKEN');
 
+/// 어르신 말을 누가 알아들을지.
+///
+/// - `device` (기본): 태블릿 내장 음성 인식이 알아듣고 글자로 보냅니다. 서버에
+///   Clova 키가 없어도 대화할 수 있습니다.
+/// - `server`: 녹음을 보내고 서버가 Clova로 알아듣습니다.
+///
+/// AI 목소리는 설정이 없습니다: 서버가 Clova로 만든 음성이 오면 그것을 틀고,
+/// 없으면 태블릿 내장 TTS로 읽습니다.
+const speechMode = String.fromEnvironment('SPEECH', defaultValue: 'device');
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -26,15 +36,24 @@ Future<void> main() async {
   final socket = ElderSocket(serverUrl: url, token: deviceToken);
   final microphone = DeviceMicrophone();
   final store = await FileClipStore.open();
+  final audio = JustAudioPlayer(store: store);
   final clips = ClipCache(
     source: RestClipSource(serverUrl: url, token: deviceToken),
     store: store,
   );
   final controller = SessionController(
     socket: socket,
-    queue: PlaybackQueue(JustAudioPlayer(store: store)),
+    queue: PlaybackQueue(
+      SpeakingPlayer(
+        audio: audio,
+        hasAudio: audio.hasAudio,
+        tts: FlutterTtsSpeaker(),
+      ),
+    ),
     clips: clips,
-    recorder: UtteranceRecorder(microphone),
+    input: speechMode == 'server'
+        ? UtteranceRecorder(microphone)
+        : DeviceSpeechInput(SpeechToTextRecognizer()),
     loadInfo: () => _loadInfo(url, deviceToken),
   );
 

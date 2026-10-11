@@ -26,7 +26,7 @@ void main() {
         source: FakeClipSource(texts: {'clip-recall-1': '그러셨어요?'}),
         store: MemoryClipStore(),
       ),
-      recorder: UtteranceRecorder(mic),
+      input: UtteranceRecorder(mic),
       loadInfo: () async =>
           const TabletInfo(elderName: '김영자', companionEnabled: true),
     );
