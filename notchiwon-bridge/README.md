@@ -37,6 +37,22 @@ notchiwon-bridge/
 cp .env.example .env
 ```
 
+### 한 파일로 실행하기 (`scripts/dev.sh`)
+
+키·토큰·Firebase 값·기기 id를 `.env` 하나에 채우면 아래 명령이 모두 그 값을 읽습니다. 아래 절의 긴 명령을 직접 칠 필요가 없습니다.
+
+```bash
+scripts/dev.sh check       # 빠진 값 확인 (예전 .env에는 앱용 빈 줄을 붙여 줌)
+scripts/dev.sh infra       # postgres, redis
+scripts/dev.sh server      # 서버 (다른 터미널에 띄워 둠)
+scripts/dev.sh seed        # 데모 데이터, 태블릿 토큰·로그인 정보를 .env에 저장
+scripts/dev.sh cli         # 텍스트로 대화해 보기
+scripts/dev.sh devices     # 기기 id 확인 → .env의 TABLET_DEVICE 등에
+scripts/dev.sh tablet      # 어르신 태블릿 앱
+scripts/dev.sh caregiver   # 조무사 앱
+scripts/dev.sh guardian    # 보호자 앱
+```
+
 ## 서버 실행
 
 ```bash
