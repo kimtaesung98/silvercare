@@ -3,7 +3,7 @@
 조무사 도착 전 병목 구간 동안 AI 대화로 노인의 정서적 안정을 돕고,
 조무사에게는 실시간 브리핑을 제공하는 시스템입니다. 하원 후에도 말동무 대화를 이어갑니다.
 
-구조와 설계 근거는 [docs/architecture.md](docs/architecture.md), 진행 순서는 [docs/development-process.md](docs/development-process.md)를 참고하세요.
+구조와 설계 근거는 [docs/architecture.md](docs/architecture.md), 진행 순서는 [docs/development-process.md](docs/development-process.md)를 참고하세요. 현재 진행 상황·코드 리뷰·모듈 명세·화이트박스 그림은 [docs/handbook/](docs/handbook/README.md)에 있습니다 (리뷰하거나 다른 에이전트가 이어서 작업할 때 시작점).
 
 ## 레포 구조
 
