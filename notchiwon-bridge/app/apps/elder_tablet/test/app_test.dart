@@ -60,6 +60,7 @@ void main() {
 
     expect(find.text('김영자 어르신'), findsOneWidget);
     expect(find.text('말동무 하기'), findsOneWidget);
+    expect(find.byKey(const Key('mic-bars')), findsOneWidget);
 
     await tester.tap(find.text('말동무 하기'));
     await tester.pump();

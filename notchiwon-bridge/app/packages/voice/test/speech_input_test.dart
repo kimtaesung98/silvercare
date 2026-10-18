@@ -9,6 +9,7 @@ class FakeRecognizer implements SpeechRecognizerPort {
   var cancels = 0;
   Completer<String?>? _current;
   void Function()? _onSpeech;
+  void Function(double level)? onLevel;
 
   /// 다음 listen에서 던질 오류 (한 번만).
   Object? failNext;
@@ -16,7 +17,10 @@ class FakeRecognizer implements SpeechRecognizerPort {
   bool get listening => _current != null;
 
   @override
-  Future<String?> listen({void Function()? onSpeech}) {
+  Future<String?> listen({
+    void Function()? onSpeech,
+    void Function(double level)? onLevel,
+  }) {
     listens++;
     final error = failNext;
     if (error != null) {
@@ -24,6 +28,7 @@ class FakeRecognizer implements SpeechRecognizerPort {
       return Future.error(error);
     }
     _onSpeech = onSpeech;
+    this.onLevel = onLevel;
     return (_current = Completer<String?>()).future;
   }
 
@@ -119,6 +124,25 @@ void main() {
     expect(input.isListening, isFalse);
     expect(recognizer.listening, isFalse);
     expect(recognizer.listens, 1);
+  });
+
+  test('엔진이 알려준 소리 크기를 levels로 내보낸다', () async {
+    final levels = <double>[];
+    final sub = input.levels.listen(levels.add);
+    await input.start();
+    await pumpEventQueue();
+
+    recognizer.onLevel!(0.4);
+    await pumpEventQueue();
+
+    expect(levels, [0.4]);
+    await sub.cancel();
+  });
+
+  test('안드로이드 소리 크기(dB)를 0~1로 바꾼다', () {
+    expect(SpeechToTextRecognizer.soundLevel(-5), 0);
+    expect(SpeechToTextRecognizer.soundLevel(4), 0.5);
+    expect(SpeechToTextRecognizer.soundLevel(20), 1);
   });
 
   test('녹음기도 같은 듣기 장치로 쓸 수 있다', () async {

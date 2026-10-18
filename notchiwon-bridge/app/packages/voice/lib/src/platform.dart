@@ -216,7 +216,10 @@ class SpeechToTextRecognizer implements SpeechRecognizerPort {
   static const _quietErrors = {'error_no_match', 'error_speech_timeout'};
 
   @override
-  Future<String?> listen({void Function()? onSpeech}) async {
+  Future<String?> listen({
+    void Function()? onSpeech,
+    void Function(double level)? onLevel,
+  }) async {
     if (!_ready) {
       // 처음 한 번 마이크 권한을 묻습니다. 실패하면 다음에 다시 해 봅니다.
       _ready = await _speech.initialize(onStatus: _onStatus, onError: _onError);
@@ -227,6 +230,9 @@ class SpeechToTextRecognizer implements SpeechRecognizerPort {
     _onSpeech = onSpeech;
     await _speech.listen(
       onResult: _onResult,
+      onSoundLevelChange: onLevel == null
+          ? null
+          : (db) => onLevel(soundLevel(db)),
       listenOptions: SpeechListenOptions(
         localeId: localeId,
         pauseFor: pauseFor,
@@ -243,6 +249,9 @@ class SpeechToTextRecognizer implements SpeechRecognizerPort {
     _finish(null);
     if (_ready) await _speech.cancel();
   }
+
+  /// 안드로이드 음성 인식이 주는 소리 크기(대략 -2~10 dB)를 0~1로 바꿉니다.
+  static double soundLevel(double db) => ((db + 2) / 12).clamp(0, 1);
 
   void _onResult(SpeechRecognitionResult result) {
     final words = result.recognizedWords;

@@ -18,7 +18,7 @@ Flutter 워크스페이스는 `app/pubspec.yaml` 하나로 묶여 있습니다. 
 | `app/apps/elder_tablet/lib/main.dart` | dart-define(`SERVER_URL`, `DEVICE_TOKEN`, `SPEECH`)으로 부품 조립 |
 | `app/apps/elder_tablet/lib/src/session_controller.dart` | 소켓 이벤트 → 화면 상태(`idle`·`talking`·`arriving`), 재생 큐, 입력 켜고 끄기, 끼어들기, 지표 |
 | `app/apps/elder_tablet/lib/src/kiosk.dart` + `android/.../MainActivity.kt`, `SessionService.kt` | Lock Task 화면 고정, Foreground Service |
-| `app/apps/elder_tablet/lib/src/screens/` | 대기(말동무 버튼), 대화(자막), 도착 임박 |
+| `app/apps/elder_tablet/lib/src/screens/` | 대기(말동무 버튼), 대화(자막), 도착 임박, 소리 막대(`mic_meter.dart`) |
 | `app/apps/caregiver/lib/src/trip.dart` | `TripController`(위치 전송 반복), `GeolocatorSource`(위치 Foreground Service) |
 | `app/apps/caregiver/lib/src/screens/` | 로그인, 오늘 방문, 방문(지도·도착 버튼), 브리핑 카드, 위급 |
 | `app/apps/caregiver/lib/src/push.dart`, `credential_store.dart`, `backend.dart` | FCM, 보안 저장소 토큰 보관, API 묶음 |
@@ -53,6 +53,7 @@ Flutter 워크스페이스는 `app/pubspec.yaml` 하나로 묶여 있습니다. 
 - `APP-07`: `session.rejected` 사유는 한국어 문장으로 보여 줍니다 (`_rejectionText`). 새 사유를 서버에 더하면 여기도 더합니다.
 - `APP-08`: 태블릿은 키오스크로 고정하고, 화면이 꺼져도 대화가 이어지게 Foreground Service를 켭니다.
 - `APP-09`: 턴마다 지연 지표(발화 끝 → 0번, 0번 끝 → 1번)를 `client.metrics`로 보냅니다.
+- `APP-17`: 마이크는 앱이 켜질 때 열고 세션이 끝나도 닫지 않습니다. 대기·대화 화면의 소리 막대(`MicMeter`)가 소리 크기를 보여 주고, 마이크를 못 열면 "마이크를 쓸 수 없어요"를 보여 줍니다. 세션이 없을 때 말이 들리면 말동무를 요청하고 그 말을 들고 있다가 세션이 열리면 보냅니다. 거절되면 버리고 `requestCooldown`(30초) 동안 다시 요청하지 않습니다 (결정 43).
 
 ### 조무사 앱
 
@@ -76,6 +77,8 @@ Flutter 워크스페이스는 `app/pubspec.yaml` 하나로 묶여 있습니다. 
 | `SPEECH` | `device` | dart-define (태블릿) | `device` 또는 `server` |
 | `arrivingMinutes` | 2 | `SessionController` | 도착 임박 화면 |
 | `muteWhileSpeaking` | true | `SessionController` | APP-06 |
+| `startOnSpeech` | true | `SessionController` | APP-17 |
+| `requestCooldown` | 30초 | `SessionController` | APP-17 |
 | 위치 간격 | 10초 | `reportIntervalProvider` | APP-10 |
 | 브리핑 재시도 | 3초 × 40 | `briefingPollProvider` | APP-11 |
 | 목록 새로고침 | 30초 | 각 `home_screen.dart` | APP-12, APP-14 |

@@ -30,6 +30,10 @@ abstract class SpeechInput {
   /// 어르신이 말을 시작했다는 신호 (끼어들기 판단에 씁니다).
   Stream<void> get speechStarted;
 
+  /// 마이크에 들어오는 소리 크기 (0~1). 마이크가 듣고 있는지 화면에
+  /// 보여줄 때 씁니다. [muted]여도 계속 내보냅니다.
+  Stream<double> get levels;
+
   /// AI가 말하는 동안 듣지 않을지.
   bool get muted;
   set muted(bool value);
@@ -47,8 +51,12 @@ abstract class SpeechInput {
 /// ([SpeechToTextRecognizer]), 테스트는 가짜를 씁니다.
 abstract class SpeechRecognizerPort {
   /// 한 마디를 듣고 알아들은 글자를 돌려줍니다. 아무 말도 없었으면 null입니다.
-  /// 말이 들리기 시작하면 [onSpeech]를 부릅니다. 엔진을 쓸 수 없으면 던집니다.
-  Future<String?> listen({void Function()? onSpeech});
+  /// 말이 들리기 시작하면 [onSpeech]를, 소리 크기(0~1)가 바뀌면 [onLevel]을
+  /// 부릅니다. 엔진을 쓸 수 없으면 던집니다.
+  Future<String?> listen({
+    void Function()? onSpeech,
+    void Function(double level)? onLevel,
+  });
 
   /// 듣던 것을 버리고 [listen]을 곧바로 끝냅니다.
   Future<void> cancel();
@@ -73,6 +81,7 @@ class DeviceSpeechInput implements SpeechInput {
 
   final _heard = StreamController<Heard>.broadcast();
   final _speechStarted = StreamController<void>.broadcast();
+  final _levels = StreamController<double>.broadcast();
 
   bool _running = false;
   bool _muted = false;
@@ -84,6 +93,9 @@ class DeviceSpeechInput implements SpeechInput {
 
   @override
   Stream<void> get speechStarted => _speechStarted.stream;
+
+  @override
+  Stream<double> get levels => _levels.stream;
 
   @override
   bool get muted => _muted;
@@ -123,6 +135,7 @@ class DeviceSpeechInput implements SpeechInput {
     await stop();
     await _heard.close();
     await _speechStarted.close();
+    await _levels.close();
   }
 
   void _wakeUp() {
@@ -139,7 +152,7 @@ class DeviceSpeechInput implements SpeechInput {
       }
       String? text;
       try {
-        text = await _recognizer.listen(onSpeech: _onSpeech);
+        text = await _recognizer.listen(onSpeech: _onSpeech, onLevel: _onLevel);
       } on Object catch (e) {
         debugPrint('기기 음성 인식 실패: $e');
         await Future<void>.delayed(retryDelay);
@@ -156,5 +169,9 @@ class DeviceSpeechInput implements SpeechInput {
     if (_running && !_muted && !_speechStarted.isClosed) {
       _speechStarted.add(null);
     }
+  }
+
+  void _onLevel(double level) {
+    if (!_levels.isClosed) _levels.add(level);
   }
 }

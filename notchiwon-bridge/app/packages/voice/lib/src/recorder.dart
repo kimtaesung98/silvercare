@@ -143,8 +143,8 @@ class SpeechSegmenter {
 /// 마이크를 열고 발화 한 구간이 끝날 때마다 PCM을 내보냅니다. 서버가 음성
 /// 인식을 할 때 쓰는 [SpeechInput]입니다.
 ///
-/// 말동무 모드에서는 대화 중에만 마이크를 엽니다 (집 안 사생활 보호,
-/// architecture.md 6.4절).
+/// 앱이 켜져 있는 동안 마이크를 계속 엽니다. 대화가 없을 때 들린 말은
+/// 말동무를 시작하는 데 씁니다 (architecture.md 결정 43).
 class UtteranceRecorder implements SpeechInput {
   UtteranceRecorder(this._mic, {SegmenterConfig? config})
     : _segmenter = SpeechSegmenter(config: config ?? const SegmenterConfig());
@@ -153,6 +153,7 @@ class UtteranceRecorder implements SpeechInput {
   final SpeechSegmenter _segmenter;
   final _utterances = StreamController<Uint8List>.broadcast();
   final _speechStarted = StreamController<void>.broadcast();
+  final _levels = StreamController<double>.broadcast();
 
   StreamSubscription<Uint8List>? _sub;
   bool _muted = false;
@@ -166,6 +167,9 @@ class UtteranceRecorder implements SpeechInput {
   /// 어르신이 말을 시작했다는 신호 (끼어들기 판단에 씁니다).
   @override
   Stream<void> get speechStarted => _speechStarted.stream;
+
+  @override
+  Stream<double> get levels => _levels.stream;
 
   bool get isRecording => _sub != null;
 
@@ -202,9 +206,16 @@ class UtteranceRecorder implements SpeechInput {
     await stop();
     await _utterances.close();
     await _speechStarted.close();
+    await _levels.close();
   }
 
+  /// 이 세기면 소리 막대가 꽉 찹니다. 가까이서 보통 크기로 말하면 0.1~0.3입니다.
+  static const _fullLevel = 0.3;
+
   void _onChunk(Uint8List chunk) {
+    if (!_levels.isClosed) {
+      _levels.add(math.min(1, SpeechSegmenter.rms(chunk) / _fullLevel));
+    }
     if (_muted) return;
     switch (_segmenter.add(chunk)) {
       case SpeechEvent.started:

@@ -143,5 +143,24 @@ void main() {
       expect(utterances, isEmpty);
       await recorder.close();
     });
+
+    test('조각마다 소리 크기를 내보낸다 (무시하는 동안에도)', () async {
+      final mic = FakeMic();
+      final recorder = UtteranceRecorder(mic);
+      final levels = <double>[];
+      recorder.levels.listen(levels.add);
+      await recorder.start();
+      recorder.muted = true;
+      mic.controller
+        ..add(chunk(0.001))
+        ..add(chunk(0.15))
+        ..add(chunk(0.9));
+      await pumpEventQueue();
+      expect(levels, hasLength(3));
+      expect(levels[0], lessThan(0.05));
+      expect(levels[1], closeTo(0.5, 0.05));
+      expect(levels[2], 1);
+      await recorder.close();
+    });
   });
 }

@@ -34,6 +34,8 @@ class ElderHome extends StatelessWidget {
     ScreenState.idle => IdleScreen(
       elderName: controller.elderName,
       connected: controller.connected,
+      micLevel: controller.micLevel,
+      micOn: controller.micOn,
       onCompanion: controller.companionEnabled
           ? controller.requestCompanion
           : null,
@@ -42,6 +44,8 @@ class ElderHome extends StatelessWidget {
       captions: controller.captions,
       speaking: controller.speaking,
       etaMinutes: controller.etaMinutes,
+      micLevel: controller.micLevel,
+      micOn: controller.micOn,
       onEnd: controller.endSession,
     ),
     ScreenState.arriving => ArrivingScreen(
