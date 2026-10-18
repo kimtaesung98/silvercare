@@ -13,13 +13,14 @@ import (
 
 	"github.com/kimtaesung98/silvercare/v2/chat"
 	"github.com/kimtaesung98/silvercare/v2/companion"
+	"github.com/kimtaesung98/silvercare/v2/safety"
 )
 
 //go:embed web
 var webFS embed.FS
 
-// server는 채팅 바탕을 HTTP로 열어 줍니다. 방을 만들 때 말동무 AI를 함께 넣는 것이
-// 지금 유일한 "서비스" 규칙입니다.
+// server는 채팅 바탕을 HTTP로 열어 줍니다. 서비스 규칙은 하나입니다: 방을 만든
+// 사람(어르신) 곁에 말동무 AI와 안전 지킴이를 함께 넣고, 말동무는 어르신에게만 답합니다.
 type server struct {
 	hub      *chat.Hub
 	newBrain func() companion.Brain
@@ -27,6 +28,12 @@ type server struct {
 	// ctx가 끝나면 말동무들도 방에서 나갑니다.
 	ctx    context.Context
 	nextID atomic.Int64
+}
+
+func newServer(ctx context.Context, newBrain func() companion.Brain, log *slog.Logger) *server {
+	hub := chat.NewHub()
+	hub.Use(safety.Module{})
+	return &server{hub: hub, newBrain: newBrain, log: log, ctx: ctx}
 }
 
 func (s *server) routes() http.Handler {
@@ -49,24 +56,34 @@ type joinResponse struct {
 	Me     chat.Participant `json:"me"`
 }
 
-// createRoom은 새 방을 만들고 요청한 사람과 말동무 AI를 넣습니다.
+// createRoom은 새 방을 만들고 요청한 사람, 말동무 AI, 안전 지킴이를 넣습니다.
 func (s *server) createRoom(w http.ResponseWriter, r *http.Request) {
 	var req joinRequest
 	if !decode(w, r, &req) {
 		return
 	}
 	roomID := s.hub.CreateRoom()
+	me, err := s.join(roomID, req.Name)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
 	c := &companion.Companion{
-		Hub:   s.hub,
-		Self:  chat.Participant{ID: "ai-" + roomID, Name: "말동무", Kind: chat.AI},
-		Brain: s.newBrain(),
-		Log:   s.log,
+		Hub:        s.hub,
+		Self:       chat.Participant{ID: "ai-" + roomID, Name: "말동무", Kind: chat.AI},
+		Brain:      s.newBrain(),
+		Log:        s.log,
+		AnswerOnly: me.ID,
 	}
 	if err := c.Join(s.ctx, roomID); err != nil {
 		httpError(w, err)
 		return
 	}
-	s.join(w, roomID, req.Name)
+	if err := (&safety.Guard{Hub: s.hub, Log: s.log}).Join(s.ctx, roomID); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, joinResponse{RoomID: roomID, Me: me})
 }
 
 // joinRoom은 이미 있는 방에 사람 한 명을 더 넣습니다 (예: 조무사, 보호자).
@@ -75,19 +92,21 @@ func (s *server) joinRoom(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &req) {
 		return
 	}
-	s.join(w, r.PathValue("room"), req.Name)
+	roomID := r.PathValue("room")
+	me, err := s.join(roomID, req.Name)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, joinResponse{RoomID: roomID, Me: me})
 }
 
-func (s *server) join(w http.ResponseWriter, roomID, name string) {
+func (s *server) join(roomID, name string) (chat.Participant, error) {
 	if name == "" {
 		name = "어르신"
 	}
 	p := chat.Participant{ID: fmt.Sprintf("h%d", s.nextID.Add(1)), Name: name, Kind: chat.Human}
-	if err := s.hub.Join(roomID, p); err != nil {
-		httpError(w, err)
-		return
-	}
-	writeJSON(w, http.StatusOK, joinResponse{RoomID: roomID, Me: p})
+	return p, s.hub.Join(roomID, p)
 }
 
 type postRequest struct {

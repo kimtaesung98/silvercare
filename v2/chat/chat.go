@@ -18,6 +18,8 @@ type Kind string
 const (
 	Human Kind = "human"
 	AI    Kind = "ai"
+	// System은 모듈이 방에 넣는 참가자입니다 (예: 안전 지킴이).
+	System Kind = "system"
 )
 
 // Participant는 방에 들어온 한 명입니다. 사람이든 AI든 같은 모양입니다.
@@ -28,12 +30,26 @@ type Participant struct {
 }
 
 // Message는 방에 오간 메시지 하나입니다. Seq는 방 안에서 1부터 늘어납니다.
+// Tags는 모듈이 붙이는 표시입니다. 바탕은 내용을 읽지 않고 그대로 전달합니다.
 type Message struct {
-	RoomID string      `json:"roomId"`
-	Seq    int         `json:"seq"`
-	From   Participant `json:"from"`
-	Text   string      `json:"text"`
-	At     time.Time   `json:"at"`
+	RoomID string            `json:"roomId"`
+	Seq    int               `json:"seq"`
+	From   Participant       `json:"from"`
+	Text   string            `json:"text"`
+	At     time.Time         `json:"at"`
+	Tags   map[string]string `json:"tags,omitempty"`
+}
+
+// TagHandledBy는 모듈이 이 메시지를 맡았다는 표시입니다. 값은 모듈 이름입니다.
+// AI 참가자는 이 표시가 붙은 메시지에 스스로 답하지 않습니다.
+const TagHandledBy = "handled_by"
+
+// Module은 메시지가 저장·전달되기 전에 들여다보고 Tags를 붙입니다.
+// Hub 잠금 안에서 불리므로 빠르게 끝나야 하고, 바깥을 부르면 안 됩니다.
+// 표시를 보고 무언가 하려면 그 모듈의 참가자가 방에 들어와 메시지를 받으면 됩니다.
+type Module interface {
+	Name() string
+	Inspect(m *Message)
 }
 
 var (
@@ -44,10 +60,11 @@ var (
 
 // Hub는 방들을 들고 있는 메모리 저장소입니다.
 type Hub struct {
-	mu     sync.Mutex
-	rooms  map[string]*room
-	nextID atomic.Int64
-	now    func() time.Time
+	mu      sync.Mutex
+	modules []Module
+	rooms   map[string]*room
+	nextID  atomic.Int64
+	now     func() time.Time
 }
 
 type room struct {
@@ -60,6 +77,13 @@ type room struct {
 // NewHub는 빈 Hub를 만듭니다.
 func NewHub() *Hub {
 	return &Hub{rooms: map[string]*room{}, now: time.Now}
+}
+
+// Use는 모든 방의 메시지를 들여다볼 모듈을 끼웁니다. 끼운 순서대로 불립니다.
+func (h *Hub) Use(m Module) {
+	h.mu.Lock()
+	h.modules = append(h.modules, m)
+	h.mu.Unlock()
 }
 
 // CreateRoom은 새 방을 만들고 id를 돌려줍니다.
@@ -114,6 +138,9 @@ func (h *Hub) Post(roomID, fromID, text string) (Message, error) {
 		return Message{}, ErrNotMember
 	}
 	m := Message{RoomID: roomID, Seq: len(r.messages) + 1, From: from, Text: text, At: h.now()}
+	for _, mod := range h.modules {
+		mod.Inspect(&m)
+	}
 	r.messages = append(r.messages, m)
 	for s := range r.subs {
 		s.deliver(m)

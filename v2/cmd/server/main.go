@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/signal"
 
-	"github.com/kimtaesung98/silvercare/v2/chat"
 	"github.com/kimtaesung98/silvercare/v2/companion"
 )
 
@@ -33,7 +32,7 @@ func main() {
 		log.Warn("ANTHROPIC_API_KEY가 없어 말동무가 정해진 맞장구로 답합니다")
 	}
 
-	s := &server{hub: chat.NewHub(), newBrain: newBrain, log: log, ctx: ctx}
+	s := newServer(ctx, newBrain, log)
 	srv := &http.Server{Addr: addr, Handler: s.routes()}
 	go func() {
 		<-ctx.Done()
