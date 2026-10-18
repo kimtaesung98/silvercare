@@ -54,7 +54,7 @@ abstract class SpeechRecognizerPort {
   Future<void> cancel();
 }
 
-/// 기기의 음성 인식으로 듣는 [SpeechInput]. Clova 키가 없어도 대화할 수
+/// 기기의 음성 인식으로 듣는 [SpeechInput]. 서버 음성 설정이 없어도 대화할 수
 /// 있도록, 알아들은 글자를 서버에 보냅니다.
 ///
 /// 기기 엔진은 한 번에 한 마디만 들으므로, 한 마디가 끝나면 다시 듣기를

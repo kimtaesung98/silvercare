@@ -96,21 +96,14 @@ func run() error {
 		TurnTimeout:          cfg.TurnTimeout,
 		MaxSentences:         session.DefaultConfig.MaxSentences,
 	}, logger)
-	var stt speech.Recognizer = speech.Unavailable{}
-	if cfg.Clova.Enabled() {
-		stt = speech.NewClova(speech.ClovaConfig(cfg.Clova))
-	} else {
-		logger.Warn("NAVER_CLOVA_CLIENT_ID/SECRET are empty: no server speech recognition (the tablet can still recognize on device)")
-	}
-	tts, err := speech.NewSynthesizer(ctx, config.Speech{Clova: cfg.Clova, Voice: cfg.Voice})
+	stt, tts, err := speech.New(ctx, cfg.Speech)
 	if err != nil {
 		return err
 	}
-	switch {
-	case cfg.Voice.Provider == config.TTSPolly:
-		logger.Info("AI voice: Amazon Polly", "voice", cfg.Voice.Polly.VoiceID, "engine", cfg.Voice.Polly.Engine, "region", cfg.Voice.Polly.Region)
-	case !cfg.Clova.Enabled():
-		logger.Warn("no server voice: the tablet reads replies with its built-in TTS")
+	if cfg.Speech.Enabled() {
+		logger.Info("speech: Amazon Transcribe and Polly", "region", cfg.Speech.Region, "voice", cfg.Speech.Voice, "engine", cfg.Speech.Engine)
+	} else {
+		logger.Warn("no AWS credentials (AWS_PROFILE or access keys): no server speech (the tablet recognizes and speaks on device)")
 	}
 	policy := companion.Policy{
 		Q:                 q,

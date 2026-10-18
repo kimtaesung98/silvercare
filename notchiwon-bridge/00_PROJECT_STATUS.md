@@ -17,7 +17,7 @@
 - **안전장치**: 위급 상황(낙상/통증/자타해)은 LLM 단독 판단이 아니라 **규칙 기반 키워드 필터를 1차 방어선**으로 두고, 감지 시 조무사/센터에 즉시 에스컬레이션 (`escalation.service.ts`).
 - **인프라**: PostgreSQL + Redis, 개인정보 이슈로 국내 리전(NCP 또는 AWS 서울) 고려.
 - **지도/ETA**: 카카오모빌리티 또는 티맵 (국내 도로 상황 반영도가 구글맵보다 높음).
-- **음성**: Naver Clova STT/TTS.
+- **음성**: Amazon Transcribe(STT) + Amazon Polly(TTS).
 
 ---
 
@@ -74,7 +74,7 @@ notchiwon-bridge/
 포맷 전에 아래 항목을 발급받아 두셨다면 **다시 확인이 필요**합니다 (로컬에만 저장했다면 유실됐을 가능성):
 - [ ] Anthropic API 키 (console.anthropic.com)
 - [ ] 카카오모빌리티 또는 티맵 API 키
-- [ ] Naver Clova STT/TTS 인증 정보
+- [ ] AWS 자격 증명 (`aws login` 프로필, Transcribe·Polly)
 - [ ] Firebase 프로젝트(FCM) 설정
 - [ ] Git 원격 저장소(GitHub 등) — **코드를 클라우드에 올려두지 않으셨다면, 이번 압축 파일이 유일한 백업본입니다.**
 

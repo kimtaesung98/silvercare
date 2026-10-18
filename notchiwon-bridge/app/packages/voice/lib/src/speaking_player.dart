@@ -12,7 +12,7 @@ abstract class TextToSpeechPort {
 
 /// 음성 파일이 있으면 그것을 틀고, 없으면 글자를 기기 TTS로 읽는 재생기.
 ///
-/// 서버에 Clova Voice가 없으면 0번 문장 음성도, 문장마다 오는 MP3도 없습니다.
+/// 서버에 Amazon Polly 설정이 없으면 0번 문장 음성도, 문장마다 오는 MP3도 없습니다.
 /// 그래도 어르신이 글자만 보지 않고 소리로 듣도록 기기 목소리로 대신 읽습니다.
 class SpeakingPlayer implements AudioPlayerPort {
   SpeakingPlayer({

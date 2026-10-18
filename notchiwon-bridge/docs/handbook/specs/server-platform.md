@@ -43,7 +43,7 @@
 
 - `PLAT-01`: 서버는 `DATABASE_URL`과 32바이트 이상의 `AUTH_SECRET` 없이 시작하지 않습니다. `CONVERSATION_TURN_TIMEOUT < CONVERSATION_FIRST_SENTENCE_TIMEOUT`이나 없는 `TIME_ZONE`도 시작 오류입니다.
 - `PLAT-02`: `MIGRATE_ON_START=true`(기본)면 시작할 때 goose와 River 마이그레이션을 모두 올립니다. 실패하면 시작하지 않습니다.
-- `PLAT-03`: 외부 키(Anthropic, Clova, 카카오, FCM)가 없어도 서버는 뜹니다. 각자 `Unavailable` 구현이 들어가고 기능은 대체 동작을 합니다 (각 명세의 "실패할 때").
+- `PLAT-03`: 외부 키(Anthropic, AWS 음성, 카카오, FCM)가 없어도 서버는 뜹니다. 각자 `Unavailable` 구현이 들어가고 기능은 대체 동작을 합니다 (각 명세의 "실패할 때").
 - `PLAT-04`: 인증은 `openapi.yaml`의 보안 스킴이 정합니다. 미들웨어는 스킴에 맞는 토큰만 받고, 다른 종류 토큰(예: 보호자 토큰으로 조무사 경로)은 401입니다.
 - `PLAT-05`: 401 본문은 `UNAUTHENTICATED`, 처리 중 오류는 `INTERNAL` + 고정 한국어 메시지이며 원인은 로그(`request_id` 포함)에만 남깁니다. 인증 중 DB 오류는 401이 아니라 500입니다.
 - `PLAT-06`: 로그인은 계정이 없어도 bcrypt 비교를 한 번 해서(`CheckPasswordOrDummy`) 응답 시간으로 계정 존재를 알 수 없게 합니다.

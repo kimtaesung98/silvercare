@@ -7,6 +7,7 @@ require (
 	github.com/aws/aws-sdk-go-v2 v1.47.3
 	github.com/aws/aws-sdk-go-v2/config v1.33.9
 	github.com/aws/aws-sdk-go-v2/service/polly v1.65.4
+	github.com/aws/aws-sdk-go-v2/service/transcribestreaming v1.44.5
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/coder/websocket v1.8.15
 	github.com/go-chi/chi/v5 v5.3.2

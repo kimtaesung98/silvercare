@@ -4,7 +4,7 @@
 //	admin set-caregiver-login -caregiver <id> -login <login id>  reads the password from stdin
 //	admin set-guardian-login -guardian <id> -login <login id>    reads the password from stdin
 //	admin seed-demo                                             adds a demo center, elder, caregiver, visit and tablet
-//	admin synth-openers                                         synthesizes missing opener clip audio with Clova TTS
+//	admin synth-openers                                         synthesizes missing opener clip audio with Amazon Polly
 //
 // Tokens and passwords are printed once and only their hashes are stored.
 package main
@@ -225,10 +225,10 @@ func synthOpeners(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error 
 	if err != nil {
 		return err
 	}
-	if cfg.Voice.Provider != config.TTSPolly && !cfg.Clova.Enabled() {
-		return errors.New("set TTS_PROVIDER=polly (with AWS keys) or NAVER_CLOVA_CLIENT_ID and NAVER_CLOVA_CLIENT_SECRET (with Clova Voice Premium)")
+	if !cfg.Enabled() {
+		return errors.New("AWS credentials are required: AWS_PROFILE (aws login) or AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY")
 	}
-	tts, err := speech.NewSynthesizer(ctx, cfg)
+	_, tts, err := speech.New(ctx, cfg)
 	if err != nil {
 		return err
 	}

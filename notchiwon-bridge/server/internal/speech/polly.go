@@ -8,11 +8,8 @@ import (
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
-	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/polly"
 	"github.com/aws/aws-sdk-go-v2/service/polly/types"
-
-	"github.com/kimtaesung98/silvercare/notchiwon-bridge/server/internal/config"
 )
 
 // PollyAPI is the part of the Polly client Polly uses (a fake in tests).
@@ -20,44 +17,43 @@ type PollyAPI interface {
 	SynthesizeSpeech(ctx context.Context, in *polly.SynthesizeSpeechInput, opts ...func(*polly.Options)) (*polly.SynthesizeSpeechOutput, error)
 }
 
-// Polly voices sentences with Amazon Polly.
+// Polly voices sentences with Amazon Polly as MP3.
 type Polly struct {
-	cfg    config.Polly
-	client PollyAPI
+	voice  types.VoiceId
+	engine types.Engine
+	rate   string
+	api    PollyAPI
 }
 
-// NewPolly returns a Polly that calls api.
-func NewPolly(cfg config.Polly, api PollyAPI) *Polly {
-	return &Polly{cfg: cfg, client: api}
+// NewPolly returns a Polly speaking with voice (Seoyeon or Jihye) on engine
+// (neural, standard, generative). rate is an SSML prosody rate such as
+// "90%"; empty or "100%" sends plain text.
+func NewPolly(voice, engine, rate string, api PollyAPI) *Polly {
+	return &Polly{voice: types.VoiceId(voice), engine: types.Engine(engine), rate: rate, api: api}
 }
 
-// NewPollyFromEnv builds the AWS client from the standard credential chain
-// (AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY, or a profile).
-func NewPollyFromEnv(ctx context.Context, cfg config.Polly) (*Polly, error) {
-	awsCfg, err := awsconfig.LoadDefaultConfig(ctx, awsconfig.WithRegion(cfg.Region))
-	if err != nil {
-		return nil, fmt.Errorf("aws config: %w", err)
-	}
-	return NewPolly(cfg, polly.NewFromConfig(awsCfg)), nil
-}
+// koreanVoices are the Polly voices that speak Korean. An elder's
+// preferred_tts_voice outside this set (or "default") uses POLLY_VOICE.
+var koreanVoices = map[string]bool{"Seoyeon": true, "Jihye": true}
 
-// Synthesize implements Synthesizer. Polly has its own Korean voices, so the
-// voice argument (a Clova speaker name or "default") is ignored and
-// POLLY_VOICE is used.
-func (p *Polly) Synthesize(ctx context.Context, text, _ string) ([]byte, error) {
+// Synthesize implements Synthesizer.
+func (p *Polly) Synthesize(ctx context.Context, text, voice string) ([]byte, error) {
 	in := &polly.SynthesizeSpeechInput{
-		Engine:       types.Engine(p.cfg.Engine),
-		VoiceId:      types.VoiceId(p.cfg.VoiceID),
+		Engine:       p.engine,
+		VoiceId:      p.voice,
 		LanguageCode: types.LanguageCodeKoKr,
 		OutputFormat: types.OutputFormatMp3,
 		Text:         aws.String(text),
 		TextType:     types.TextTypeText,
 	}
-	if p.cfg.Rate != "" && p.cfg.Rate != "100%" {
-		in.Text = aws.String(`<speak><prosody rate="` + html.EscapeString(p.cfg.Rate) + `">` + html.EscapeString(text) + `</prosody></speak>`)
+	if koreanVoices[voice] {
+		in.VoiceId = types.VoiceId(voice)
+	}
+	if p.rate != "" && p.rate != "100%" {
+		in.Text = aws.String(`<speak><prosody rate="` + html.EscapeString(p.rate) + `">` + html.EscapeString(text) + `</prosody></speak>`)
 		in.TextType = types.TextTypeSsml
 	}
-	out, err := p.client.SynthesizeSpeech(ctx, in)
+	out, err := p.api.SynthesizeSpeech(ctx, in)
 	if err != nil {
 		return nil, fmt.Errorf("polly: %w", err)
 	}
@@ -70,16 +66,4 @@ func (p *Polly) Synthesize(ctx context.Context, text, _ string) ([]byte, error) 
 		return nil, errors.New("polly returned no audio")
 	}
 	return audio, nil
-}
-
-// NewSynthesizer returns the synthesizer TTS_PROVIDER names: Clova Voice
-// (Unavailable without the Clova keys) or Amazon Polly.
-func NewSynthesizer(ctx context.Context, s config.Speech) (Synthesizer, error) {
-	if s.Voice.Provider == config.TTSPolly {
-		return NewPollyFromEnv(ctx, s.Voice.Polly)
-	}
-	if s.Clova.Enabled() {
-		return NewClova(ClovaConfig(s.Clova)), nil
-	}
-	return Unavailable{}, nil
 }

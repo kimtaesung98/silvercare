@@ -6,7 +6,7 @@
 #   scripts/dev.sh infra       postgres, redis 띄우기 (Docker)
 #   scripts/dev.sh server      서버 실행 (make run)
 #   scripts/dev.sh seed        데모 데이터 만들고 토큰·로그인을 .env에 저장
-#   scripts/dev.sh openers     0번 문장 음성 합성 (Clova Voice나 Amazon Polly 필요)
+#   scripts/dev.sh openers     0번 문장 음성 합성 (Amazon Polly, AWS 자격 증명 필요)
 #   scripts/dev.sh cli         텍스트로 어르신 대화 (elder-cli)
 #   scripts/dev.sh devices     연결된 기기·에뮬레이터 목록
 #   scripts/dev.sh tablet      어르신 태블릿 앱 실행
@@ -73,9 +73,13 @@ cmd_check() {
   load_env
   report "필수" DATABASE_URL AUTH_SECRET
   report "Claude (없으면 대체 문장만)" ANTHROPIC_API_KEY
-  report "Clova 음성 인식 (없으면 태블릿 내장 인식)" NAVER_CLOVA_CLIENT_ID NAVER_CLOVA_CLIENT_SECRET
-  if [ "${TTS_PROVIDER:-clova}" = polly ]; then
-    report "Amazon Polly 목소리" AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+  echo "[Amazon 음성 (없으면 태블릿 내장 인식·TTS)]"
+  if [ -n "${AWS_PROFILE:-}" ]; then
+    echo "  ok    AWS_PROFILE=$AWS_PROFILE (aws login, 리전 ${AWS_REGION:-ap-southeast-2})"
+  elif [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
+    echo "  ok    AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (리전 ${AWS_REGION:-ap-southeast-2})"
+  else
+    echo "  비어있음 AWS_PROFILE (또는 AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY)"
   fi
   report "카카오 ETA (없으면 예정 시각 기준)" KAKAO_MOBILITY_API_KEY
   report "서버 푸시 (없으면 앱 목록에만)" FCM_CREDENTIALS_FILE
@@ -86,7 +90,11 @@ cmd_check() {
   report "기기 id (없으면 flutter가 물음)" TABLET_DEVICE CAREGIVER_DEVICE GUARDIAN_DEVICE
   echo "[태블릿 음성]"
   echo "  어르신 말 알아듣기: $(tablet_speech) (TABLET_SPEECH로 바꿀 수 있음)"
-  echo "  AI 목소리: $(ai_voice)"
+  if aws_speech; then
+    echo "  AI 목소리: Amazon Polly (${POLLY_VOICE:-Seoyeon}, ${POLLY_ENGINE:-neural})"
+  else
+    echo "  AI 목소리: 태블릿 내장 TTS"
+  fi
   if [ -n "${AUTH_SECRET:-}" ] && [ "${#AUTH_SECRET}" -lt 32 ]; then
     echo "주의: AUTH_SECRET이 32자보다 짧아 서버가 시작하지 않습니다 (openssl rand -base64 48)"
   fi
@@ -127,27 +135,6 @@ cmd_seed() {
   echo ".env에 DEVICE_TOKEN과 로그인 정보를 저장했습니다. 태블릿 앱은 다시 실행해야 새 토큰을 씁니다."
 }
 
-# ai_voice: 서버가 AI 문장을 어느 목소리로 만드는지 (TTS_PROVIDER와 키로 정해짐).
-ai_voice() {
-  case "${TTS_PROVIDER:-clova}" in
-    polly)
-      if [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; then
-        echo "Amazon Polly (${POLLY_VOICE:-Seoyeon}, ${POLLY_ENGINE:-neural})"
-      else
-        echo "Amazon Polly인데 AWS 키가 비어 있음 (서버가 문장마다 실패하고 태블릿 내장 TTS로 읽음)"
-      fi
-      ;;
-    clova)
-      if [ -n "${NAVER_CLOVA_CLIENT_ID:-}" ] && [ -n "${NAVER_CLOVA_CLIENT_SECRET:-}" ]; then
-        echo "Clova Voice (Application에 CLOVA Voice - Premium이 있어야 함)"
-      else
-        echo "태블릿 내장 TTS"
-      fi
-      ;;
-    *) echo "TTS_PROVIDER가 잘못됨: ${TTS_PROVIDER} (clova 또는 polly, 서버가 시작하지 않음)" ;;
-  esac
-}
-
 cmd_openers() {
   load_env
   cd "$ROOT/server"
@@ -186,12 +173,17 @@ firebase_defines() {
   fi
 }
 
+# aws_speech: 서버가 Amazon 음성을 쓸 수 있는지 (프로필 또는 액세스 키 두 개).
+aws_speech() {
+  [ -n "${AWS_PROFILE:-}" ] || { [ -n "${AWS_ACCESS_KEY_ID:-}" ] && [ -n "${AWS_SECRET_ACCESS_KEY:-}" ]; }
+}
+
 # tablet_speech: 태블릿이 어르신 말을 알아듣는 방식. TABLET_SPEECH가 비면
-# Clova 키가 있을 때 server(서버가 Clova로), 없을 때 device(태블릿 내장 음성 인식).
+# AWS 자격 증명이 있을 때 server(서버가 Transcribe로), 없을 때 device(태블릿 내장 음성 인식).
 tablet_speech() {
   if [ -n "${TABLET_SPEECH:-}" ]; then
     echo "$TABLET_SPEECH"
-  elif [ -n "${NAVER_CLOVA_CLIENT_ID:-}" ] && [ -n "${NAVER_CLOVA_CLIENT_SECRET:-}" ]; then
+  elif aws_speech; then
     echo server
   else
     echo device

@@ -18,7 +18,7 @@
  │ Go 서버 (단일 바이너리)                                              │
  │  대화 오케스트레이터 │ 안전 필터 │ 비동기 작업(River) │ 방문·ETA        │
  └──────┬──────────┬──────────┬──────────┬──────────┬──────────┬──────┘
-   PostgreSQL    Redis     Claude API   Clova     카카오·티맵    FCM
+   PostgreSQL    Redis     Claude API   AWS       카카오·티맵    FCM
    모든 기록   최근 대화    Sonnet·Haiku  STT·TTS    ETA 계산    푸시 알림
 ```
 
@@ -77,7 +77,7 @@ server/
     ├── keyword/             관심사 태그 감쇠 갱신 작업
     ├── companion/           말동무 모드 일정·토큰 한도
     ├── llm/                 Claude 호출, 프롬프트 템플릿
-    ├── speech/              STT·TTS (Clova)
+    ├── speech/              STT·TTS (Amazon Transcribe·Polly)
     ├── eta/                 카카오모빌리티 (키가 없으면 예정 시각 기준)
     ├── notify/              FCM
     ├── auth/                기기 토큰, 조무사 로그인
@@ -128,7 +128,7 @@ Claude는 서버에서만 호출합니다. API 키가 기기에 남지 않고, �
 ### 6.1 한 턴의 흐름
 
 1. 어르신 발화가 끝나면 태블릿이 음성을 WebSocket으로 보냅니다.
-2. 서버가 Clova로 STT를 돌리고 `utterance`(ELDER)에 저장합니다.
+2. 서버가 Amazon Transcribe로 STT를 돌리고 `utterance`(ELDER)에 저장합니다.
 3. **규칙 필터가 항상 먼저** 검사합니다. 걸리면 `escalation_event`를 만들고 FCM으로 알리며, Claude를 부르지 않고 정해진 안심 문장만 보냅니다.
 4. 걸리지 않으면 LLM 없이 규칙으로 발화 유형(회상, 질문, 감정, 짧은 대답, 인사)을 분류해 **0번 문장**을 고르고 `ai.opener { clip_id }`를 보냅니다. 태블릿은 캐시된 음성을 바로 재생합니다.
 5. 같은 순간 Claude(Sonnet)를 스트리밍으로 호출합니다. 프롬프트에 "방금 '<0번 문장>'이라고 말했으니 그다음 문장부터 1~3문장으로 이어서 답하라"를 넣습니다.
@@ -239,6 +239,7 @@ Claude는 서버에서만 호출합니다. API 키가 기기에 남지 않고, �
 | 39 | 긴 대화 줄이기 (2026-10-06) | 요약하지 않은 발화가 30개를 넘으면 마지막 20개를 뺀 앞부분을 Haiku로 요약해 시스템 프롬프트에 넣고, 요약된 발화는 요청에서 뺌. 요약은 앞으로만 나아가고(`history_summary_through`), Claude가 없으면 요약 없이 그대로 보냄 |
 | 40 | 하루 소식 (2026-10-06) | 취침 시간이 시작될 때, 없으면 `COMPANION_DIGEST_AT`(기본 21:00)에 보냄. (어르신, 날짜) 한 줄만 들어가므로 재시도해도 두 번 보내지 않음. 대화가 없었으면 그렇다고 알리고, Claude가 없으면 어르신 말씀 마지막 5개를 그대로 인용. 그날 위급이 있었으면 "위급 감지: … (바로 연락드렸어요)"를 덧붙임 |
 | 41 | Clova 없는 태블릿 음성 (2026-10-11) | 어르신 말은 기본으로 태블릿 내장 음성 인식(안드로이드 SpeechRecognizer)이 알아듣고 `elder.text`로 보냄. `SPEECH=server`면 예전처럼 녹음을 `elder.audio`로 보내 서버 Clova CSR이 알아들음. AI 문장에 음성이 없으면(Clova Voice 없음, 0번 문장 미합성) 태블릿 내장 TTS로 읽음. 알아듣는 동안 AI가 말을 시작하면 인식을 멈춰 태블릿 소리를 어르신 말로 받지 않음 |
+| 42 | 음성은 Amazon으로 (2026-10-18) | Naver Clova를 모두 빼고 서버 음성 인식은 Amazon Transcribe 스트리밍(ko-KR, 한 마디를 100ms 조각으로 보내고 확정 결과만 씀), AI 목소리는 Amazon Polly(Seoyeon neural, 90% 빠르기, MP3). 자격 증명은 `aws login` 프로필(`AWS_PROFILE`)이나 액세스 키, 기본 리전 ap-southeast-2. 자격 증명이 없으면 41번처럼 태블릿 내장 인식·TTS |
 
 ## 8. 아직 정하지 않은 것
 

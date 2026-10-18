@@ -119,8 +119,8 @@ flutter pub get                       # workspace 전체 한 번에
 # 어르신 태블릿: 서버 주소와 기기 토큰을 빌드할 때 넣습니다
 # (토큰은 POST /devices/{deviceId}/token으로 발급)
 # SPEECH=device(기본)는 태블릿 내장 음성 인식이 알아듣고 글자로 보내고,
-# SPEECH=server는 녹음을 보내 서버가 Clova로 알아듣습니다. AI 목소리는 서버가
-# Clova로 만든 음성이 없으면 태블릿 내장 TTS로 읽습니다.
+# SPEECH=server는 녹음을 보내 서버가 Amazon Transcribe로 알아듣습니다. AI 목소리는
+# 서버가 Amazon Polly로 만든 음성이 없으면 태블릿 내장 TTS로 읽습니다.
 cd apps/elder_tablet && flutter run \
   --dart-define=SERVER_URL=http://10.0.2.2:8000 \
   --dart-define=DEVICE_TOKEN=... \
@@ -161,7 +161,7 @@ cd server && go run ./cmd/admin synth-openers
 
 ### 픽업 흐름 처음부터 끝까지 시험하기
 
-1. `.env`에 `ANTHROPIC_API_KEY`, `NAVER_CLOVA_CLIENT_ID`/`SECRET`, `KAKAO_MOBILITY_API_KEY`, `FCM_CREDENTIALS_FILE`(Firebase 서비스 계정 JSON 경로)을 넣고 서버를 띄웁니다. 빠진 키가 있으면 시작 로그에 무엇이 대신 동작하는지 경고가 나옵니다.
+1. `.env`에 `ANTHROPIC_API_KEY`, `AWS_PROFILE`(또는 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY`, Amazon Transcribe·Polly용), `KAKAO_MOBILITY_API_KEY`, `FCM_CREDENTIALS_FILE`(Firebase 서비스 계정 JSON 경로)을 넣고 서버를 띄웁니다. 빠진 키가 있으면 시작 로그에 무엇이 대신 동작하는지 경고가 나옵니다.
 2. `go run ./cmd/admin seed-demo`로 조무사 계정·30분 뒤 방문·태블릿 토큰을 받고, `go run ./cmd/admin synth-openers`로 0번 문장 음성을 만듭니다. 데모 어르신 댁은 서울 종로구 세종대로 175입니다(실제 주소는 DB `elder.home_*`에).
 3. 태블릿(또는 에뮬레이터)에 어르신 앱을, 휴대폰에 조무사 앱을 설치합니다. 실제 기기에서는 `SERVER_URL`을 개발 PC의 사설 IP로 넣습니다.
 4. 조무사 앱에서 로그인 → 방문 → "출발하기". ETA가 15분 이내면 태블릿에서 대화가 시작됩니다(가까이 있으면 `SESSION_TRIGGER_ETA_MINUTES`를 크게).

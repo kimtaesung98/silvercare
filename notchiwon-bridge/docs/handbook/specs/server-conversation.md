@@ -19,8 +19,7 @@
 | `server/internal/session/goodbye.go` | 말동무 종료 문구 `WantsToStop` |
 | `server/internal/opener/` | `Classify`(규칙 분류), `Library.Manifest`/`Pick`, 0번 문장 음성 합성·보관 |
 | `server/internal/llm/` | `Client` 인터페이스, `Anthropic`(스트리밍, `flag_concern` 도구), 프롬프트 템플릿(`prompts/*.tmpl`), 요약기(브리핑·하루 소식·긴 대화) |
-| `server/internal/speech/speech.go` | `Recognizer`/`Synthesizer`, `Clova`, `Unavailable` |
-| `server/internal/speech/polly.go` | `Polly`(Amazon Polly TTS), `NewSynthesizer`(`TTS_PROVIDER`로 목소리 고르기) |
+| `server/internal/speech/` | `Recognizer`/`Synthesizer`/`Unavailable`(`speech.go`), `Transcribe`(`transcribe.go`, 스트리밍 인식), `Polly`(`polly.go`), `New`(`aws.go`, 자격 증명이 있으면 둘 다) |
 | 테스트 | `session/engine_test.go`, `ws_test.go`, `split_test.go`, `companion_test.go`, `opener/classify_test.go`, `llm/*_test.go`, `speech/speech_test.go` |
 
 ## 인터페이스
@@ -52,8 +51,8 @@
 - `CONV-13`: 태블릿 연결은 기기당 하나입니다. 새 연결이 오면 옛 연결을 `StatusPolicyViolation`으로 닫습니다.
 - `CONV-14`: 한 턴의 이벤트는 연결의 이벤트 고루틴에서 순서대로 나갑니다. TTS도 거기서 하므로 문장 순서가 보장됩니다. 문장 TTS는 5초 제한, 넘으면 글자만 보냅니다.
 - `CONV-15`: 보내기 큐(256)가 차면 느린 태블릿으로 보고 연결을 닫습니다. 태블릿은 재접속해 `connection.ready`부터 이어갑니다.
-- `CONV-16`: `elder.audio`는 STT(10초 제한)를 거쳐 `elder.text`와 같은 턴이 됩니다. 인식 실패나 빈 결과는 `STT_FAILED`.
-- `CONV-17`: Claude·Clova·AWS 키는 서버에만 있습니다. 태블릿은 녹음하고 틀기만 합니다 (기기 음성 모드는 기기 엔진이 인식하고 글자만 보냄, [apps.md](./apps.md)).
+- `CONV-16`: `elder.audio`는 STT(10초 제한)를 거쳐 `elder.text`와 같은 턴이 됩니다. Transcribe 스트리밍에 녹음을 100ms 조각으로 보내고 입력을 닫은 뒤 확정(non-partial) 결과만 이어 붙입니다. `pcm16`, `opus`(Ogg)만 받고, 인식 실패·빈 결과·`aac`는 `STT_FAILED`.
+- `CONV-17`: Claude 키와 AWS 자격 증명은 서버에만 있습니다. 태블릿은 녹음하고 틀기만 합니다 (기기 음성 모드는 기기 엔진이 인식하고 글자만 보냄, [apps.md](./apps.md)).
 
 ## 설정값
 
@@ -65,11 +64,9 @@
 | `CONVERSATION_FILLER_AFTER` | `2s` | 추임새 시각 |
 | `CONVERSATION_FIRST_SENTENCE_TIMEOUT` | `6s` | 대체 문장 시각 |
 | `CONVERSATION_TURN_TIMEOUT` | `20s` | 턴 상한 (첫 문장 제한 이상이어야 함) |
-| `NAVER_CLOVA_CLIENT_ID/SECRET` | 없음 | 없으면 서버 STT 실패 (태블릿 기기 인식은 됨). `TTS_PROVIDER=clova`면 TTS도 이 키 |
-| `TTS_PROVIDER` | `clova` | AI 목소리: `clova`(Clova Voice Premium) 또는 `polly`(Amazon Polly). 잘못된 값이면 시작하지 않음 |
-| `AWS_ACCESS_KEY_ID/SECRET_ACCESS_KEY`, `AWS_REGION` | 없음, `ap-northeast-2` | Polly 자격 증명과 리전 (AWS 표준 자격 증명 체인) |
-| `POLLY_VOICE`, `POLLY_ENGINE`, `POLLY_RATE` | `Seoyeon`, `neural`, `90%` | Polly 목소리(Seoyeon·Jihye), 엔진, SSML 빠르기. Polly는 어르신의 Clova 화자 설정을 무시함 |
-| `CLOVA_DEFAULT_SPEAKER`, `CLOVA_TTS_SPEED` | `nara`, `1` | Clova 목소리, 빠르기 (-5~5, 클수록 느림) |
+| `AWS_PROFILE` 또는 `AWS_ACCESS_KEY_ID`/`AWS_SECRET_ACCESS_KEY` | 없음 | 없으면 서버 STT 실패(태블릿 기기 인식은 됨), TTS 없음 |
+| `AWS_REGION`, `TRANSCRIBE_LANGUAGE` | `ap-southeast-2`, `ko-KR` | Transcribe·Polly 리전, 인식 언어 |
+| `POLLY_VOICE`, `POLLY_ENGINE`, `POLLY_RATE` | `Seoyeon`, `neural`, `90%` | Polly 목소리(Seoyeon·Jihye), 엔진, SSML 빠르기. 어르신 `preferred_tts_voice`가 Seoyeon·Jihye면 그 목소리 |
 
 ## 실패할 때
 
