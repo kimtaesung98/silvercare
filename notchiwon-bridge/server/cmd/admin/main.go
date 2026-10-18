@@ -176,7 +176,8 @@ func setGuardianPassword(ctx context.Context, q *db.Queries, id uuid.UUID, login
 }
 
 // seedDemo adds one center with an elder, a caregiver who can log in, a visit
-// 30 minutes from now and the elder's tablet, for trying the API locally.
+// 30 minutes from now, the elder's companion schedule (on) and tablet, for
+// trying the API locally.
 func seedDemo(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
 	login := "demo-" + uuid.NewString()[:6]
 	password := uuid.NewString()[:12]
@@ -192,6 +193,7 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
 			                              home_address, home_latitude, home_longitude)
 			           SELECT '김순자', '1940-03-01', 'MILD', g.id, c.id,
 			                  '서울 종로구 세종대로 175', 37.5725, 126.9769 FROM g, c RETURNING id, center_id, guardian_id),
+			     cs AS (INSERT INTO companion_schedule (elder_id) SELECT id FROM e),
 			     cg AS (INSERT INTO caregiver (name, center_id) SELECT '이조무', e.center_id FROM e RETURNING id),
 			     v AS (INSERT INTO visit (elder_id, caregiver_id, scheduled_time)
 			           SELECT e.id, cg.id, $1 FROM e, cg RETURNING id)

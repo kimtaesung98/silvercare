@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:api_client/api_client.dart';
@@ -133,6 +134,27 @@ void main() {
   });
 
   group('ElderSocket', () {
+    test('기본 연결은 기기 토큰을 Authorization 헤더로 보낸다', () async {
+      final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+      final auth = Completer<String?>();
+      server.listen((req) async {
+        if (!auth.isCompleted) {
+          auth.complete(req.headers.value(HttpHeaders.authorizationHeader));
+        }
+        final ws = await WebSocketTransformer.upgrade(req);
+        await ws.close();
+      });
+      final socket = ElderSocket(
+        serverUrl: Uri.parse('http://127.0.0.1:${server.port}'),
+        token: 'device-token',
+      );
+      unawaited(socket.start());
+
+      expect(await auth.future, 'Bearer device-token');
+      await socket.close();
+      await server.close(force: true);
+    });
+
     late FakeChannel channel;
     late List<FakeChannel> opened;
     late ElderSocket socket;

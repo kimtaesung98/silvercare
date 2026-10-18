@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:web_socket_channel/io.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import 'events.dart';
@@ -59,14 +60,19 @@ class ElderSocket {
 
   ConnectionState get state => _state;
 
+  /// 기기 토큰을 `Authorization: Bearer` 헤더로 붙여 엽니다. 서버는 헤더가
+  /// 없으면 401로 거절합니다 (태블릿은 안드로이드라 dart:io 채널을 씁니다).
   static Future<WebSocketChannel> _defaultConnect(Uri url, String token) async {
-    final channel = WebSocketChannel.connect(url, protocols: null);
+    final channel = IOWebSocketChannel.connect(
+      url,
+      headers: {'Authorization': 'Bearer $token'},
+    );
     await channel.ready;
     return channel;
   }
 
-  /// WebSocket 주소 (`ws://host/ws/elder`). 토큰은 헤더로 보낼 수 없는 환경을
-  /// 대비해 쿼리로도 붙이지 않습니다. [ChannelFactory]가 헤더를 넣습니다.
+  /// WebSocket 주소 (`ws://host/ws/elder`). 토큰은 주소(쿼리)에 넣지 않고
+  /// [ChannelFactory]가 헤더로 넣습니다.
   Uri get socketUrl => serverUrl.replace(
     scheme: serverUrl.scheme == 'https' ? 'wss' : 'ws',
     path: '/ws/elder',
