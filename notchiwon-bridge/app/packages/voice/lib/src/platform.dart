@@ -55,11 +55,21 @@ class JustAudioPlayer implements AudioPlayerPort {
       return;
     }
     await _player.play();
-    await _player.processingStateStream.firstWhere(
-      (s) => s == ProcessingState.completed,
-    );
+    await untilDone(_player.processingStateStream);
     await _player.stop();
   }
+
+  /// 재생이 끝나거나 [stop]으로 멈출 때까지 기다립니다.
+  ///
+  /// 끝까지 튼 경우만 기다리면, 세션이 끝나거나 어르신이 끼어들어 [stop]이
+  /// 불렸을 때(상태가 idle로 감) 영영 돌아오지 않습니다. 그러면 재생 큐가
+  /// 멈춘 채로 남아 다음 대화의 AI 목소리가 나오지 않고, 마이크도 "AI가
+  /// 말하는 중"으로 묶여 어르신 말을 보내지 않습니다.
+  static Future<void> untilDone(Stream<ProcessingState> states) =>
+      states.firstWhere(
+        (s) => s == ProcessingState.completed || s == ProcessingState.idle,
+        orElse: () => ProcessingState.idle,
+      );
 
   @override
   Future<void> stop() => _player.stop();
