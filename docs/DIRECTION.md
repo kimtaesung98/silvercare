@@ -53,13 +53,19 @@
 
 | 회차 | 날짜 | 목표 | 결과 | 다음 제안 |
 | --- | --- | --- | --- | --- |
-| 0 | 2026-10-18 | 방향 문서 만들기 | 이 문서와 저장소 루트 `CLAUDE.md` | 실기기 또는 텍스트 경로로 말동무 대화 한 번을 처음부터 끝까지 |
+| 0 | 2026-10-18 | 방향 문서 만들기, 출발점 정하기 | 이 문서와 저장소 루트 `CLAUDE.md`. 주인 결정: 새로 처음부터 | `v2/`에 가장 작은 말동무 한 바퀴(어르신 말 → 대답 → 위급 문장은 알림)를 텍스트로 먼저 |
 
-## 7. 참고 자료
+## 7. 출발점과 참고 자료
 
-지금까지 만든 것은 출발점이자 참고 자료입니다. 회차에서 바꿀 수 있고, 바꾸면 해당 문서에 남깁니다.
+2026-10-18 주인 결정: **새로 처음부터** 만듭니다.
 
-- 진행 상황·모듈 명세·리뷰: [handbook/](./handbook/README.md)
-- 구조와 확정된 결정 1~44: [architecture.md](./architecture.md)
-- 이전 단계 계획(0~7): [development-process.md](./development-process.md)
+- 새 코드는 저장소 루트의 `v2/` 폴더에 만듭니다.
+- `notchiwon-bridge/`는 고치지 않는 참고 자료입니다. 필요한 생각이나 코드 조각은 가져오되, 그대로 옮기지 않고 이번 회차 목표에 맞는 만큼만 가져옵니다.
+- 기술 스택도 회차에서 다시 고를 수 있습니다. 바꿀 이유가 없으면 이전과 같이 Go 서버와 Flutter 앱으로 갑니다.
+
+이전 자료 (`notchiwon-bridge/` 안):
+
+- 진행 상황·모듈 명세·리뷰: [handbook/](../notchiwon-bridge/docs/handbook/README.md)
+- 구조와 확정된 결정 1~44: [architecture.md](../notchiwon-bridge/docs/architecture.md)
+- 이전 단계 계획(0~7): [development-process.md](../notchiwon-bridge/docs/development-process.md)
 - 실행·키 발급·테스트 기기 안내: 프로젝트 공유 폴더 `guides/`
