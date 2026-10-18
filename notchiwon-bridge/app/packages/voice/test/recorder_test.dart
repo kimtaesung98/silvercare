@@ -97,6 +97,18 @@ void main() {
       expect(SpeechSegmenter.rms(chunk(0.001)), lessThan(0.05));
       expect(SpeechSegmenter.rms(chunk(0.5)), greaterThan(0.08));
     });
+
+    test('rms는 홀수 위치에서 잘린 조각도 읽는다', () {
+      final pcm = chunk(0.5);
+      final shifted = Uint8List(pcm.length + 1)
+        ..setRange(1, pcm.length + 1, pcm);
+      final view = Uint8List.sublistView(shifted, 1);
+      expect(view.offsetInBytes, 1);
+      expect(
+        SpeechSegmenter.rms(view),
+        closeTo(SpeechSegmenter.rms(pcm), 1e-9),
+      );
+    });
   });
 
   group('UtteranceRecorder', () {
@@ -160,6 +172,36 @@ void main() {
       expect(levels[0], lessThan(0.05));
       expect(levels[1], closeTo(0.5, 0.05));
       expect(levels[2], 1);
+      await recorder.close();
+    });
+
+    test('홀수 길이·홀수 위치 조각이 와도 샘플 경계를 맞춰 발화를 찾는다', () async {
+      final mic = FakeMic();
+      final recorder = UtteranceRecorder(mic);
+      final utterances = <Uint8List>[];
+      final levels = <double>[];
+      recorder.utterances.listen(utterances.add);
+      recorder.levels.listen(levels.add);
+      await recorder.start();
+
+      // 2초 분량을 이어 붙인 뒤 홀수 위치·홀수 길이로 잘라 넣습니다.
+      final whole = BytesBuilder();
+      for (var i = 0; i < 30; i++) {
+        whole.add(chunk(0.3));
+      }
+      for (var i = 0; i < 70; i++) {
+        whole.add(chunk(0.001));
+      }
+      final padded = Uint8List.fromList([0, ...whole.takeBytes()]);
+      for (var at = 1; at < padded.length; at += 641) {
+        final end = math.min(at + 641, padded.length);
+        mic.controller.add(Uint8List.sublistView(padded, at, end));
+      }
+      await pumpEventQueue();
+
+      expect(utterances, hasLength(1));
+      expect(levels.first, closeTo(1, 0.01));
+      expect(levels.last, lessThan(0.05));
       await recorder.close();
     });
   });
