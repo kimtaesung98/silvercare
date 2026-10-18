@@ -112,6 +112,7 @@ func run() error {
 	}
 	hub, err := session.NewHub(q, engine, openers, session.HubConfig{
 		PromptVersion: llm.PromptVersion, STT: stt, TTS: tts, CanStart: policy.CanStart,
+		AudioDir: cfg.DebugAudioDir,
 	}, logger)
 	if err != nil {
 		return err

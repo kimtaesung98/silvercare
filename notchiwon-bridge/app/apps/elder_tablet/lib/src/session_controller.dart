@@ -79,8 +79,9 @@ class SessionController extends ChangeNotifier {
   /// 대화가 없을 때 어르신이 말하면 말동무를 시작할지.
   final bool startOnSpeech;
 
-  /// 말로 말동무를 요청한 뒤 이만큼은 다시 요청하지 않습니다 (취침 시간처럼
-  /// 거절될 때 말할 때마다 요청하지 않게).
+  /// 말로 말동무를 요청한 뒤나 대화가 끝난 뒤 이만큼은 말로 다시 요청하지
+  /// 않습니다 (거절되거나 그만하기를 누른 뒤 들린 소리로 곧바로 다시 시작하지
+  /// 않게).
   final Duration requestCooldown;
 
   /// 마이크 진단 로그를 남기는 간격.
@@ -352,6 +353,13 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> _leaveSession() async {
+    if (_sessionId != null) {
+      // 방금 끝난 대화(그만하기 포함) 뒤에 들린 소리로 곧바로 다시 시작하지
+      // 않게, 말로 시작하기도 [requestCooldown] 동안 쉽니다.
+      _requestedAt = DateTime.now();
+      _pending = null;
+      _awaitingSession = false;
+    }
     _sessionId = null;
     _mode = null;
     _etaMinutes = null;
