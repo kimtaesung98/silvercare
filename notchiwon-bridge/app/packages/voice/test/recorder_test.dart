@@ -93,6 +93,43 @@ void main() {
       expect(event, SpeechEvent.ended);
     });
 
+    test('배경 소리가 끝 문턱보다 커도 말이 끝나면 끊는다', () {
+      final s = SpeechSegmenter();
+      // 에뮬레이터·선풍기처럼 0.06짜리 잡음이 깔려 있습니다 (끝 문턱 0.05 위).
+      for (var i = 0; i < 100; i++) {
+        expect(s.add(chunk(0.06)), isNull, reason: '잡음은 말이 아님');
+      }
+      expect(s.noiseFloor, closeTo(0.06, 0.01));
+
+      expect(s.add(chunk(0.3)), SpeechEvent.started);
+      for (var i = 0; i < 30; i++) {
+        s.add(chunk(0.3));
+      }
+      SpeechEvent? event;
+      for (var i = 0; i < 60 && event == null; i++) {
+        event = s.add(chunk(0.06));
+      }
+      expect(event, SpeechEvent.ended);
+    });
+
+    test('처음부터 시끄러워 최대 길이로 잘리면 그 소리를 배경으로 삼는다', () {
+      final s = SpeechSegmenter(
+        config: const SegmenterConfig(maxUtterance: Duration(seconds: 1)),
+      );
+      // 시작 문턱(0.08)보다 큰 잡음: 말로 잡혔다가 끝나지 않습니다.
+      expect(s.add(chunk(0.1)), SpeechEvent.started);
+      SpeechEvent? event;
+      for (var i = 0; i < 60 && event == null; i++) {
+        event = s.add(chunk(0.1));
+      }
+      expect(event, SpeechEvent.ended);
+      expect(s.noiseFloor, closeTo(0.1, 0.01));
+
+      // 이제 같은 잡음으로는 시작하지 않고, 말소리로는 시작합니다.
+      expect(s.add(chunk(0.1)), isNull);
+      expect(s.add(chunk(0.4)), SpeechEvent.started);
+    });
+
     test('rms는 조용한 조각과 큰 조각을 가른다', () {
       expect(SpeechSegmenter.rms(chunk(0.001)), lessThan(0.05));
       expect(SpeechSegmenter.rms(chunk(0.5)), greaterThan(0.08));
@@ -172,6 +209,23 @@ void main() {
       expect(levels[0], lessThan(0.05));
       expect(levels[1], closeTo(0.5, 0.05));
       expect(levels[2], 1);
+      await recorder.close();
+    });
+
+    test('소리 막대는 배경 소리를 빼고 보여준다', () async {
+      final mic = FakeMic();
+      final recorder = UtteranceRecorder(mic);
+      final levels = <double>[];
+      recorder.levels.listen(levels.add);
+      await recorder.start();
+      for (var i = 0; i < 100; i++) {
+        mic.controller.add(chunk(0.06));
+      }
+      mic.controller.add(chunk(0.21));
+      await pumpEventQueue();
+      expect(recorder.noiseFloor, closeTo(0.06, 0.01));
+      expect(levels[levels.length - 2], lessThan(0.05), reason: '잡음만');
+      expect(levels.last, closeTo(0.5, 0.05), reason: '말소리');
       await recorder.close();
     });
 

@@ -22,6 +22,8 @@ class SegmenterConfig {
     this.silenceToEnd = const Duration(milliseconds: 900),
     this.minUtterance = const Duration(milliseconds: 400),
     this.maxUtterance = const Duration(seconds: 30),
+    this.startOverFloor = 2.5,
+    this.endOverFloor = 1.5,
   });
 
   /// 이 세기를 넘으면 말이 시작된 것으로 봅니다 (0~1).
@@ -40,6 +42,13 @@ class SegmenterConfig {
 
   /// 이보다 길면 거기서 한 번 끊습니다.
   final Duration maxUtterance;
+
+  /// 배경 소리(선풍기, TV, 에뮬레이터 잡음)가 크면 문턱을 그만큼 올립니다.
+  /// 배경 소리의 이 배수를 넘어야 말이 시작된 것으로 봅니다.
+  final double startOverFloor;
+
+  /// 배경 소리의 이 배수 아래로 내려가면 조용한 것으로 봅니다.
+  final double endOverFloor;
 }
 
 /// 발화가 시작·끝났음을 알려주는 신호.
@@ -56,6 +65,23 @@ class SpeechSegmenter {
   Duration _elapsed = Duration.zero;
   Duration? _speechStart;
   Duration? _silenceStart;
+  double _floor = 0;
+  double _quietestSpoken = 0;
+
+  /// 지금까지 들은 배경 소리 세기 (0~1).
+  ///
+  /// 배경 소리가 끝 문턱보다 크면 조용해지는 순간이 오지 않아 모든 발화가
+  /// [SegmenterConfig.maxUtterance]까지 늘어집니다. 그래서 대기 중에 들리는
+  /// 소리로 배경 세기를 재고, 문턱을 그 위로 올립니다.
+  double get noiseFloor => _floor;
+
+  /// 지금 말이 시작됐다고 볼 세기.
+  double get startLevel =>
+      math.max(config.startThreshold, noiseFloor * config.startOverFloor);
+
+  /// 지금 조용하다고 볼 세기.
+  double get endLevel =>
+      math.max(config.endThreshold, noiseFloor * config.endOverFloor);
 
   /// 말하는 중인지.
   bool get isSpeaking => _speechStart != null;
@@ -76,13 +102,18 @@ class SpeechSegmenter {
   /// 16kHz 모노 PCM16 기준으로 길이를 시간으로 셉니다.
   SpeechEvent? add(Uint8List chunk, {int sampleRate = 16000}) {
     final level = rms(chunk);
-    _elapsed += Duration(
+    final length = Duration(
       microseconds: (chunk.length / 2 / sampleRate * 1000000).round(),
     );
+    _elapsed += length;
 
     if (!isSpeaking) {
-      if (level < config.startThreshold) return null;
+      if (level < startLevel) {
+        _trackFloor(level, length);
+        return null;
+      }
       _speechStart = _elapsed;
+      _quietestSpoken = level;
       _silenceStart = null;
       _chunks
         ..clear()
@@ -91,10 +122,15 @@ class SpeechSegmenter {
     }
 
     _chunks.add(chunk);
+    _quietestSpoken = math.min(_quietestSpoken, level);
     final spoken = _elapsed - _speechStart!;
-    if (spoken >= config.maxUtterance) return _end();
+    if (spoken >= config.maxUtterance) {
+      // 이렇게 오래 조용한 순간이 없었다면 그 가장 조용한 소리가 배경입니다.
+      _floor = math.max(noiseFloor, _quietestSpoken);
+      return _end();
+    }
 
-    if (level >= config.endThreshold) {
+    if (level >= endLevel) {
       _silenceStart = null;
       return null;
     }
@@ -115,6 +151,15 @@ class SpeechSegmenter {
       return SpeechEvent.tooShort;
     }
     return SpeechEvent.ended;
+  }
+
+  // 조용해질 때는 빨리(0.1초), 시끄러워질 때는 천천히(1초) 따라갑니다.
+  // 말소리는 시작 문턱을 넘어 여기까지 오지 않습니다.
+  void _trackFloor(double level, Duration length) {
+    final floor = noiseFloor;
+    final seconds = length.inMicroseconds / 1000000;
+    final follow = 1 - math.exp(-seconds / (level < floor ? 0.1 : 1.0));
+    _floor = floor + (level - floor) * follow;
   }
 
   /// 모은 발화를 비웁니다 (보낸 뒤에 부릅니다).
@@ -177,6 +222,9 @@ class UtteranceRecorder implements SpeechInput {
 
   bool get isRecording => _sub != null;
 
+  /// 배경 소리 세기 (진단용, [SpeechSegmenter.noiseFloor]).
+  double get noiseFloor => _segmenter.noiseFloor;
+
   /// 마이크를 엽니다.
   @override
   Future<void> start() async {
@@ -214,14 +262,17 @@ class UtteranceRecorder implements SpeechInput {
     await _levels.close();
   }
 
-  /// 이 세기면 소리 막대가 꽉 찹니다. 가까이서 보통 크기로 말하면 0.1~0.3입니다.
+  /// 배경 소리보다 이만큼 크면 소리 막대가 꽉 찹니다. 가까이서 보통 크기로
+  /// 말하면 0.1~0.3입니다.
   static const _fullLevel = 0.3;
 
   void _onChunk(Uint8List raw) {
     final chunk = _aligned(raw);
     if (chunk.isEmpty) return;
     if (!_levels.isClosed) {
-      _levels.add(math.min(1, SpeechSegmenter.rms(chunk) / _fullLevel));
+      // 배경 소리를 빼서, 잡음만 있을 때는 막대가 내려가 있고 말할 때 올라갑니다.
+      final over = SpeechSegmenter.rms(chunk) - _segmenter.noiseFloor;
+      _levels.add((over / _fullLevel).clamp(0.0, 1.0));
     }
     if (_muted) return;
     switch (_segmenter.add(chunk)) {

@@ -255,6 +255,10 @@ class SessionController extends ChangeNotifier {
           ? '[진단] 마이크: 소리 조각이 하나도 안 옴'
           : '[진단] 마이크: 조각 $_diagChunks개, 가장 큰 소리 '
                 '${_diagPeak.toStringAsFixed(3)} (말소리는 보통 0.2 이상)'
+                '${switch (input) {
+                  UtteranceRecorder(:final noiseFloor) => ', 배경 소리 ${noiseFloor.toStringAsFixed(3)}',
+                  _ => '',
+                }}'
                 '${input.muted ? ', AI가 말하는 중이라 무시' : ''}',
     );
     _diagChunks = 0;
