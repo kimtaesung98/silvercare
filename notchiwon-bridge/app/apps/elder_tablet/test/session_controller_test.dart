@@ -257,6 +257,19 @@ void main() {
     expect(controller.notice, contains('한 번만 더 말씀'));
   });
 
+  test('대화가 끝난 직후 들린 소리로는 말동무를 다시 요청하지 않는다', () async {
+    await ready();
+    await startSession();
+    channel.serverSendsEvent('session.ended', {
+      'sessionId': 's-1',
+      'reason': 'ELDER_DECLINED',
+    });
+    await settle();
+    await speak();
+
+    expect(channel.lastSent('session.request'), isNull);
+  });
+
   test('세션이 끝나면 대기 화면으로 돌아가고, 마이크는 계속 듣는다', () async {
     await startSession();
     channel.serverSendsEvent('session.ended', {
@@ -317,7 +330,7 @@ void main() {
       expect(recognizer.listening, isTrue);
     });
 
-    test('세션이 끝나도 계속 듣고, 대기 중에 말하면 말동무를 요청한다', () async {
+    test('세션이 끝나도 계속 듣는다', () async {
       await startSession();
       channel.serverSendsEvent('session.ended', {
         'sessionId': 's-1',
@@ -326,9 +339,13 @@ void main() {
       await settle();
 
       expect(recognizer.listening, isTrue);
+    });
 
+    test('대기 중에 말하면 말동무를 요청한다', () async {
+      await ready();
       recognizer.say('심심하네');
       await settle();
+
       expect(channel.lastSent('session.request'), isNotNull);
     });
   });

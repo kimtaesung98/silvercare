@@ -58,6 +58,10 @@ type Config struct {
 	TurnTimeout          time.Duration `env:"CONVERSATION_TURN_TIMEOUT" envDefault:"20s"`
 
 	Speech Speech
+
+	// DebugAudioDir, when set, keeps every elder recording the server receives
+	// as a WAV file there (local debugging only: it is the elder's voice).
+	DebugAudioDir string `env:"DEBUG_AUDIO_DIR"`
 }
 
 // Speech is Amazon speech: Transcribe hears the elder (STT) and Polly voices

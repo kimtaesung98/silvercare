@@ -45,6 +45,9 @@ type HubConfig struct {
 	CanStart func(ctx context.Context, elderID uuid.UUID) (string, error)
 	STT      speech.Recognizer
 	TTS      speech.Synthesizer
+	// AudioDir, when set, keeps each received recording as a WAV file there
+	// (DEBUG_AUDIO_DIR, local debugging only).
+	AudioDir string
 }
 
 // Hub serves GET /ws/elder: one connection per elder tablet. It also tells
@@ -597,6 +600,13 @@ func (c *conn) elderAudio(env envelope) {
 		return
 	}
 	c.log().Info("elder audio received", "session_id", d.SessionID, "bytes", len(audio))
+	if dir := c.h.cfg.AudioDir; dir != "" {
+		if path, err := saveAudio(dir, d.SessionID, d.Audio.Format, d.Audio.SampleRateHz, audio); err != nil {
+			c.log().Warn("save debug audio", "err", err)
+		} else {
+			c.log().Info("debug audio saved", "path", path)
+		}
+	}
 	go func() {
 		if !c.checkSession(d.SessionID, env.ID) {
 			return
