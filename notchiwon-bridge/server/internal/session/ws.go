@@ -116,11 +116,13 @@ type envelope struct {
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	tok, ok := auth.BearerToken(r.Header.Get("Authorization"))
 	if !ok {
+		h.logger.WarnContext(r.Context(), "tablet rejected: no bearer token")
 		writeUnauthorized(w)
 		return
 	}
 	tablet, err := auth.LookupTablet(r.Context(), h.q, tok)
 	if errors.Is(err, auth.ErrUnknownDevice) {
+		h.logger.WarnContext(r.Context(), "tablet rejected: unknown device token")
 		writeUnauthorized(w)
 		return
 	}
@@ -284,6 +286,8 @@ func (c *conn) run() {
 		c.close(websocket.StatusInternalError, "internal error")
 		return
 	}
+	c.log().Info("tablet connected")
+	defer c.log().Info("tablet disconnected")
 	for {
 		rctx, cancel := context.WithTimeout(context.Background(), readTimeout)
 		typ, data, err := c.ws.Read(rctx)
@@ -474,6 +478,7 @@ func (c *conn) handle(data []byte) {
 		c.send("pong", map[string]any{"nonce": d.Nonce})
 	case "pong":
 	case "session.request":
+		c.log().Info("companion requested by tablet")
 		c.requestCompanion(env.ID)
 	case "session.end":
 		var d struct{ SessionID uuid.UUID }
@@ -486,6 +491,7 @@ func (c *conn) handle(data []byte) {
 			Text      string
 		}
 		_ = json.Unmarshal(env.Data, &d)
+		c.log().Info("elder text received", "session_id", d.SessionID, "chars", len([]rune(d.Text)))
 		go c.elderText(d.SessionID, d.ClientID, d.Text, env.ID)
 	case "elder.audio":
 		c.elderAudio(env)
@@ -590,6 +596,7 @@ func (c *conn) elderAudio(env envelope) {
 		}
 		return
 	}
+	c.log().Info("elder audio received", "session_id", d.SessionID, "bytes", len(audio))
 	go func() {
 		if !c.checkSession(d.SessionID, env.ID) {
 			return
@@ -605,6 +612,7 @@ func (c *conn) elderAudio(env envelope) {
 		}
 		c.log().Info("speech recognized", "session_id", d.SessionID, "bytes", len(audio), "stt_ms", time.Since(start).Milliseconds())
 		if strings.TrimSpace(text) == "" {
+			c.log().Info("speech recognized as empty", "session_id", d.SessionID)
 			c.sendError("STT_FAILED", "말씀을 알아듣지 못했습니다.", env.ID)
 			return
 		}
