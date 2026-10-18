@@ -1,0 +1,186 @@
+package main
+
+import (
+	"context"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io/fs"
+	"log/slog"
+	"net/http"
+	"sync/atomic"
+
+	"github.com/kimtaesung98/silvercare/v2/chat"
+	"github.com/kimtaesung98/silvercare/v2/companion"
+)
+
+//go:embed web
+var webFS embed.FS
+
+// server는 채팅 바탕을 HTTP로 열어 줍니다. 방을 만들 때 말동무 AI를 함께 넣는 것이
+// 지금 유일한 "서비스" 규칙입니다.
+type server struct {
+	hub      *chat.Hub
+	newBrain func() companion.Brain
+	log      *slog.Logger
+	// ctx가 끝나면 말동무들도 방에서 나갑니다.
+	ctx    context.Context
+	nextID atomic.Int64
+}
+
+func (s *server) routes() http.Handler {
+	mux := http.NewServeMux()
+	static, _ := fs.Sub(webFS, "web")
+	mux.Handle("GET /", http.FileServerFS(static))
+	mux.HandleFunc("POST /api/rooms", s.createRoom)
+	mux.HandleFunc("POST /api/rooms/{room}/join", s.joinRoom)
+	mux.HandleFunc("POST /api/rooms/{room}/messages", s.postMessage)
+	mux.HandleFunc("GET /api/rooms/{room}/events", s.events)
+	return mux
+}
+
+type joinRequest struct {
+	Name string `json:"name"`
+}
+
+type joinResponse struct {
+	RoomID string           `json:"roomId"`
+	Me     chat.Participant `json:"me"`
+}
+
+// createRoom은 새 방을 만들고 요청한 사람과 말동무 AI를 넣습니다.
+func (s *server) createRoom(w http.ResponseWriter, r *http.Request) {
+	var req joinRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	roomID := s.hub.CreateRoom()
+	c := &companion.Companion{
+		Hub:   s.hub,
+		Self:  chat.Participant{ID: "ai-" + roomID, Name: "말동무", Kind: chat.AI},
+		Brain: s.newBrain(),
+		Log:   s.log,
+	}
+	if err := c.Join(s.ctx, roomID); err != nil {
+		httpError(w, err)
+		return
+	}
+	s.join(w, roomID, req.Name)
+}
+
+// joinRoom은 이미 있는 방에 사람 한 명을 더 넣습니다 (예: 조무사, 보호자).
+func (s *server) joinRoom(w http.ResponseWriter, r *http.Request) {
+	var req joinRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	s.join(w, r.PathValue("room"), req.Name)
+}
+
+func (s *server) join(w http.ResponseWriter, roomID, name string) {
+	if name == "" {
+		name = "어르신"
+	}
+	p := chat.Participant{ID: fmt.Sprintf("h%d", s.nextID.Add(1)), Name: name, Kind: chat.Human}
+	if err := s.hub.Join(roomID, p); err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, joinResponse{RoomID: roomID, Me: p})
+}
+
+type postRequest struct {
+	From string `json:"from"`
+	Text string `json:"text"`
+}
+
+func (s *server) postMessage(w http.ResponseWriter, r *http.Request) {
+	var req postRequest
+	if !decode(w, r, &req) {
+		return
+	}
+	m, err := s.hub.Post(r.PathValue("room"), req.From, req.Text)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, m)
+}
+
+// events는 Server-Sent Events로 지난 메시지를 먼저, 그다음 새 메시지를 보냅니다.
+func (s *server) events(w http.ResponseWriter, r *http.Request) {
+	roomID := r.PathValue("room")
+	// 구독을 먼저 열고 기록을 읽어야 그 사이에 온 메시지를 놓치지 않습니다.
+	sub, err := s.hub.Subscribe(roomID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+	defer sub.Close()
+	history, err := s.hub.History(roomID)
+	if err != nil {
+		httpError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	flusher, _ := w.(http.Flusher)
+	last := 0
+	send := func(m chat.Message) {
+		if m.Seq <= last {
+			return
+		}
+		last = m.Seq
+		b, _ := json.Marshal(m)
+		fmt.Fprintf(w, "data: %s\n\n", b)
+	}
+	for _, m := range history {
+		send(m)
+	}
+	if flusher != nil {
+		flusher.Flush()
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case m, ok := <-sub.C():
+			if !ok {
+				return
+			}
+			send(m)
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+	}
+}
+
+func decode(w http.ResponseWriter, r *http.Request, v any) bool {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(v); err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "잘못된 요청입니다"})
+		return false
+	}
+	return true
+}
+
+func httpError(w http.ResponseWriter, err error) {
+	status := http.StatusInternalServerError
+	switch {
+	case errors.Is(err, chat.ErrNoRoom):
+		status = http.StatusNotFound
+	case errors.Is(err, chat.ErrNotMember):
+		status = http.StatusForbidden
+	case errors.Is(err, chat.ErrEmpty):
+		status = http.StatusBadRequest
+	}
+	writeJSON(w, status, map[string]string{"error": err.Error()})
+}
+
+func writeJSON(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(v)
+}
