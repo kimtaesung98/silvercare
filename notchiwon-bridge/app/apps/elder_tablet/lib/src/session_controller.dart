@@ -48,6 +48,7 @@ class SessionController extends ChangeNotifier {
     this.muteWhileSpeaking = true,
     this.startOnSpeech = true,
     this.requestCooldown = const Duration(seconds: 30),
+    this.diagnosticsEvery = const Duration(seconds: 5),
   });
 
   /// `/ws/elder` 연결.
@@ -82,6 +83,9 @@ class SessionController extends ChangeNotifier {
   /// 거절될 때 말할 때마다 요청하지 않게).
   final Duration requestCooldown;
 
+  /// 마이크 진단 로그를 남기는 간격.
+  final Duration diagnosticsEvery;
+
   /// 마이크에 들어오는 소리 크기 (0~1). 화면의 소리 막대가 봅니다.
   /// 조각마다 바뀌므로 [notifyListeners]와 따로 둡니다.
   final micLevel = ValueNotifier<double>(0);
@@ -104,6 +108,12 @@ class SessionController extends ChangeNotifier {
   Heard? _pending;
   bool _awaitingSession = false;
   DateTime? _requestedAt;
+
+  // 진단 로그 (flutter run 터미널에 `[진단]`으로 찍힘): 몇 초마다 마이크
+  // 조각 수와 가장 큰 소리를 적어서, 소리가 앱까지 오는지 볼 수 있게 합니다.
+  Timer? _diagTimer;
+  var _diagChunks = 0;
+  var _diagPeak = 0.0;
 
   // 측정값 (development-process.md 단계 4).
   DateTime? _utteranceEnd;
@@ -164,7 +174,8 @@ class SessionController extends ChangeNotifier {
       ..add(queue.finished.listen(_onPlaybackFinished))
       ..add(input.heard.listen(_onHeard))
       ..add(input.speechStarted.listen((_) => _onSpeechStarted()))
-      ..add(input.levels.listen((level) => micLevel.value = level));
+      ..add(input.levels.listen(_onLevel));
+    _diagTimer = Timer.periodic(diagnosticsEvery, (_) => _logMic());
     unawaited(_loadTabletInfo());
     unawaited(_openMic());
     await socket.start();
@@ -195,6 +206,7 @@ class SessionController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _diagTimer?.cancel();
     for (final s in _subs) {
       unawaited(s.cancel());
     }
@@ -209,9 +221,10 @@ class SessionController extends ChangeNotifier {
     try {
       await input.start();
       _micOn = true;
+      debugPrint('[진단] 마이크 열림');
     } on Object catch (e) {
       _micOn = false;
-      debugPrint('마이크 열기 실패: $e');
+      debugPrint('[진단] 마이크 열기 실패: $e');
     }
     notifyListeners();
   }
@@ -229,7 +242,26 @@ class SessionController extends ChangeNotifier {
 
   String _nextId() => 'c-${++_clientSeq}';
 
+  void _onLevel(double level) {
+    micLevel.value = level;
+    _diagChunks++;
+    if (level > _diagPeak) _diagPeak = level;
+  }
+
+  void _logMic() {
+    debugPrint(
+      _diagChunks == 0
+          ? '[진단] 마이크: 소리 조각이 하나도 안 옴'
+          : '[진단] 마이크: 조각 $_diagChunks개, 가장 큰 소리 '
+                '${_diagPeak.toStringAsFixed(3)} (말소리는 보통 0.2 이상)'
+                '${input.muted ? ', AI가 말하는 중이라 무시' : ''}',
+    );
+    _diagChunks = 0;
+    _diagPeak = 0;
+  }
+
   void _onState(ConnectionState state) {
+    debugPrint('[진단] 서버 연결: ${state.name}');
     _connected = state == ConnectionState.connected;
     if (!_connected) {
       _pending = null;
@@ -239,6 +271,9 @@ class SessionController extends ChangeNotifier {
   }
 
   Future<void> _onEvent(ElderEvent event) async {
+    if (event is! Ping && event is! Pong) {
+      debugPrint('[진단] 서버 → 태블릿: ${event.runtimeType}');
+    }
     switch (event) {
       case ConnectionReady(:final activeSession, :final openerVersion):
         unawaited(_syncClips(openerVersion));
@@ -391,10 +426,15 @@ class SessionController extends ChangeNotifier {
     _requestedAt = now;
     _awaitingSession = true;
     _pending = heard;
+    debugPrint('[진단] 대기 중에 말이 들려서 말동무를 요청');
     requestCompanion();
   }
 
   void _sendHeard(String id, Heard heard) {
+    debugPrint(switch (heard) {
+      HeardAudio(:final pcm) => '[진단] 태블릿 → 서버: 녹음 ${pcm.length}바이트',
+      HeardText(:final text) => '[진단] 태블릿 → 서버: 글자 "$text"',
+    });
     _utteranceEnd = DateTime.now();
     _utteranceEndToOpenerMs = null;
     _openerEndToFirstReplyMs = null;
