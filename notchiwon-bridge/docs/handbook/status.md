@@ -43,14 +43,15 @@ flowchart LR
 | 키 | 없을 때 | 넣으면 |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | 매 턴 대체 문장, 브리핑·하루 소식은 어르신 말 인용 | 실제 대화와 요약 |
-| `NAVER_CLOVA_CLIENT_ID/SECRET` | 태블릿 내장 음성 인식·TTS | Clova 인식·목소리 (넣은 뒤 `scripts/dev.sh openers`) |
+| `NAVER_CLOVA_CLIENT_ID/SECRET` | 태블릿 내장 음성 인식 | Clova 인식 (`TTS_PROVIDER=clova`면 목소리도) |
+| `TTS_PROVIDER=polly` + AWS 키 | 태블릿 내장 TTS | Amazon Polly 목소리 (넣은 뒤 `scripts/dev.sh openers`) |
 | `KAKAO_MOBILITY_API_KEY` | 예정 시각까지 남은 분을 ETA로 | 실제 도로 ETA |
 | `FCM_CREDENTIALS_FILE` + 앱 Firebase 값 | 위급 알림은 앱 목록에만 (30초마다 새로 읽음) | 휴대폰 푸시 |
 
 ## 5. 다음 할 일
 
 - [ ] emulator-5558에서 말동무 버튼을 눌러 음성 대화 확인 ([CR-14](./code-review.md#cr-14))
-- [ ] Clova 결제 후 키를 `.env`에 넣고 `scripts/dev.sh openers`
+- [ ] Clova CSR 키와 AWS(Polly) 키를 `.env`에 넣고 `scripts/dev.sh openers`
 - [ ] Claude 키로 대화 품질 확인 (단계 3 검토)
 - [ ] 안전 경로 고치기: [CR-01](./code-review.md#cr-01) 규칙 필터, [CR-02](./code-review.md#cr-02) 잘린 답의 `flag_concern`
 - [ ] [CR-03](./code-review.md#cr-03) 긴 대화 요약

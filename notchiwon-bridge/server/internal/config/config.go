@@ -58,6 +58,7 @@ type Config struct {
 	TurnTimeout          time.Duration `env:"CONVERSATION_TURN_TIMEOUT" envDefault:"20s"`
 
 	Clova Clova
+	Voice Voice
 }
 
 // Clova is Naver Clova speech. Without the keys the server runs in text
@@ -75,8 +76,57 @@ type Clova struct {
 // Enabled reports whether both keys are set.
 func (c Clova) Enabled() bool { return c.ClientID != "" && c.ClientSecret != "" }
 
-// LoadClova reads only the Clova settings (for cmd/admin).
-func LoadClova() (Clova, error) { return env.ParseAs[Clova]() }
+// TTS providers (TTS_PROVIDER).
+const (
+	TTSClova = "clova"
+	TTSPolly = "polly"
+)
+
+// Voice picks who voices AI sentences and opener clips. Speech recognition
+// stays with Clova either way.
+type Voice struct {
+	// Provider is "clova" (Clova Voice Premium, uses the Clova keys) or
+	// "polly" (Amazon Polly, uses the standard AWS credentials:
+	// AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY).
+	Provider string `env:"TTS_PROVIDER" envDefault:"clova"`
+	Polly    Polly
+}
+
+// Polly is Amazon Polly text to speech.
+type Polly struct {
+	Region string `env:"AWS_REGION" envDefault:"ap-northeast-2"`
+	// VoiceID is a Korean Polly voice: Seoyeon (standard, neural, generative)
+	// or Jihye (neural).
+	VoiceID string `env:"POLLY_VOICE" envDefault:"Seoyeon"`
+	Engine  string `env:"POLLY_ENGINE" envDefault:"neural"`
+	// Rate is an SSML prosody rate such as "90%"; elders follow a slightly
+	// slower voice better. Empty or "100%" sends plain text.
+	Rate string `env:"POLLY_RATE" envDefault:"90%"`
+}
+
+// Speech is the speech settings alone (for cmd/admin).
+type Speech struct {
+	Clova Clova
+	Voice Voice
+}
+
+// LoadSpeech reads only the speech settings (for cmd/admin).
+func LoadSpeech() (Speech, error) {
+	s, err := env.ParseAs[Speech]()
+	if err != nil {
+		return Speech{}, err
+	}
+	return s, s.Voice.check()
+}
+
+func (v Voice) check() error {
+	switch v.Provider {
+	case TTSClova, TTSPolly:
+		return nil
+	default:
+		return errors.New(`TTS_PROVIDER must be "clova" or "polly"`)
+	}
+}
 
 // Load reads Config from the process environment and checks it.
 func Load() (Config, error) {
@@ -95,6 +145,9 @@ func Load() (Config, error) {
 	}
 	if cfg.Clova.TTSSpeed < -5 || cfg.Clova.TTSSpeed > 5 {
 		return Config{}, errors.New("CLOVA_TTS_SPEED must be between -5 and 5")
+	}
+	if err := cfg.Voice.check(); err != nil {
+		return Config{}, err
 	}
 	if _, err := time.LoadLocation(cfg.TimeZone); err != nil {
 		return Config{}, err

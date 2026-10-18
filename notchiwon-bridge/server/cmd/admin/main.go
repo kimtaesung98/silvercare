@@ -221,14 +221,18 @@ func seedDemo(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
 // synthOpeners makes the audio of every active opener clip that has none, so
 // tablets need not wait for on-demand synthesis.
 func synthOpeners(ctx context.Context, pool *pgxpool.Pool, out io.Writer) error {
-	cfg, err := config.LoadClova()
+	cfg, err := config.LoadSpeech()
 	if err != nil {
 		return err
 	}
-	if !cfg.Enabled() {
-		return errors.New("NAVER_CLOVA_CLIENT_ID and NAVER_CLOVA_CLIENT_SECRET are required")
+	if cfg.Voice.Provider != config.TTSPolly && !cfg.Clova.Enabled() {
+		return errors.New("set TTS_PROVIDER=polly (with AWS keys) or NAVER_CLOVA_CLIENT_ID and NAVER_CLOVA_CLIENT_SECRET (with Clova Voice Premium)")
 	}
-	n, err := opener.NewLibrary(db.New(pool)).SynthesizeMissing(ctx, speech.NewClova(speech.ClovaConfig(cfg)))
+	tts, err := speech.NewSynthesizer(ctx, cfg)
+	if err != nil {
+		return err
+	}
+	n, err := opener.NewLibrary(db.New(pool)).SynthesizeMissing(ctx, tts)
 	fmt.Fprintf(out, "synthesized %d clips\n", n)
 	return err
 }

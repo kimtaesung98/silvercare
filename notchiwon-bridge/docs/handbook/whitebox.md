@@ -21,7 +21,7 @@ flowchart LR
   end
   PG[("PostgreSQL<br/>기록 + River 큐")]
   CL["Claude API<br/>Sonnet 대화 · Haiku 요약"]
-  CV["Naver Clova<br/>STT · TTS (선택)"]
+  CV["Naver Clova STT · TTS<br/>또는 Amazon Polly TTS (선택)"]
   KK["카카오모빌리티<br/>ETA (선택)"]
   FCM["FCM 푸시 (선택)"]
 
@@ -58,7 +58,7 @@ flowchart TB
   escalation["escalation<br/>규칙 필터"]
   opener["opener<br/>0번 문장 분류·목록"]
   llm["llm<br/>Claude 클라이언트·프롬프트"]
-  speech["speech<br/>Clova STT·TTS"]
+  speech["speech<br/>Clova STT · Clova/Polly TTS"]
   eta["eta<br/>Schedule · Kakao"]
   auth["auth<br/>토큰·비밀번호·기기"]
   db["db<br/>sqlc 생성 쿼리"]
