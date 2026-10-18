@@ -124,19 +124,20 @@ class SpeechSegmenter {
     _silenceStart = null;
   }
 
-  /// PCM16 조각의 세기 (0~1).
+  /// PCM16(리틀 엔디언) 조각의 세기 (0~1).
+  ///
+  /// 마이크 플러그인은 큰 버퍼의 일부를 홀수 위치에서 잘라 주기도 해서
+  /// `asInt16List`(2바이트 정렬 필요) 대신 [ByteData]로 읽습니다.
   static double rms(Uint8List pcm) {
-    if (pcm.length < 2) return 0;
-    final samples = pcm.buffer.asInt16List(
-      pcm.offsetInBytes,
-      pcm.lengthInBytes ~/ 2,
-    );
+    final count = pcm.lengthInBytes ~/ 2;
+    if (count == 0) return 0;
+    final bytes = ByteData.sublistView(pcm);
     var sum = 0.0;
-    for (final s in samples) {
-      final v = s / 32768.0;
+    for (var i = 0; i < count; i++) {
+      final v = bytes.getInt16(i * 2, Endian.little) / 32768.0;
       sum += v * v;
     }
-    return math.sqrt(sum / samples.length);
+    return math.sqrt(sum / count);
   }
 }
 
@@ -157,6 +158,9 @@ class UtteranceRecorder implements SpeechInput {
 
   StreamSubscription<Uint8List>? _sub;
   bool _muted = false;
+
+  // 조각 길이가 홀수면 마지막 1바이트(샘플 반쪽)를 다음 조각 앞에 붙입니다.
+  int? _carry;
 
   /// 끝난 발화 한 구간.
   Stream<Uint8List> get utterances => _utterances.stream;
@@ -186,6 +190,7 @@ class UtteranceRecorder implements SpeechInput {
   Future<void> stop() async {
     await _sub?.cancel();
     _sub = null;
+    _carry = null;
     _segmenter.reset();
     await _mic.stop();
   }
@@ -212,7 +217,9 @@ class UtteranceRecorder implements SpeechInput {
   /// 이 세기면 소리 막대가 꽉 찹니다. 가까이서 보통 크기로 말하면 0.1~0.3입니다.
   static const _fullLevel = 0.3;
 
-  void _onChunk(Uint8List chunk) {
+  void _onChunk(Uint8List raw) {
+    final chunk = _aligned(raw);
+    if (chunk.isEmpty) return;
     if (!_levels.isClosed) {
       _levels.add(math.min(1, SpeechSegmenter.rms(chunk) / _fullLevel));
     }
@@ -228,5 +235,21 @@ class UtteranceRecorder implements SpeechInput {
       case null:
         break;
     }
+  }
+
+  /// 샘플(2바이트) 경계에 맞춘 조각. 남은 반쪽은 [_carry]에 둡니다.
+  Uint8List _aligned(Uint8List raw) {
+    final carry = _carry;
+    final bytes = carry == null
+        ? raw
+        : (Uint8List(raw.length + 1)
+            ..[0] = carry
+            ..setRange(1, raw.length + 1, raw));
+    if (bytes.length.isEven) {
+      _carry = null;
+      return bytes;
+    }
+    _carry = bytes[bytes.length - 1];
+    return Uint8List.sublistView(bytes, 0, bytes.length - 1);
   }
 }
