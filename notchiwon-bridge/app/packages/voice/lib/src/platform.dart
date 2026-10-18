@@ -136,6 +136,10 @@ class DeviceMicrophone implements MicrophonePort {
       // 스피커 소리가 마이크로 되돌아오는 것을 기기가 줄여 줍니다.
       echoCancel: true,
       noiseSuppress: true,
+      // AI 목소리를 틀면 재생기가 오디오 포커스를 가져갑니다. 기본값(pause)은
+      // 그때 녹음을 멈추고 다시 켜지 않아서 첫 대답 뒤로 마이크가 죽습니다.
+      // 마이크는 앱이 켜진 내내 들어야 하므로 포커스와 상관없이 계속 녹음합니다.
+      audioInterruption: AudioInterruptionMode.none,
     ),
   );
 
