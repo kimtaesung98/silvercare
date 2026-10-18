@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>실버케어 대화방</title>
+<style>
+  :root { --bg:#fffaf3; --fg:#222; --me:#ffe58f; --ai:#e6f4ff; --other:#eee; --accent:#d46b08; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:22px/1.5 system-ui, sans-serif; display:flex; flex-direction:column; height:100vh; }
+  header { padding:12px 16px; border-bottom:1px solid #ddd; font-size:18px; }
+  #start, #room { flex:1; display:flex; flex-direction:column; min-height:0; }
+  #start { align-items:center; justify-content:center; gap:16px; padding:16px; }
+  #room { display:none; }
+  #log { flex:1; overflow-y:auto; padding:16px; display:flex; flex-direction:column; gap:10px; }
+  .msg { max-width:80%; padding:10px 14px; border-radius:16px; background:var(--other); }
+  .msg.me { align-self:flex-end; background:var(--me); }
+  .msg.ai { background:var(--ai); }
+  .who { font-size:15px; opacity:.7; }
+  form { display:flex; gap:8px; padding:12px 16px; border-top:1px solid #ddd; }
+  input { flex:1; font:inherit; padding:12px; border:2px solid #ccc; border-radius:12px; min-width:0; }
+  button { font:inherit; padding:12px 20px; border:0; border-radius:12px; background:var(--accent); color:#fff; }
+</style>
+</head>
+<body>
+<header id="title">실버케어 대화방</header>
+
+<div id="start">
+  <label>이름 <input id="name" value="어르신"></label>
+  <button id="go">대화 시작</button>
+</div>
+
+<div id="room">
+  <div id="log"></div>
+  <form id="send"><input id="text" autocomplete="off" placeholder="말씀을 적어 주세요"><button>보내기</button></form>
+</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const joinRoom = params.get("room");
+let me, roomId;
+const $ = (id) => document.getElementById(id);
+if (joinRoom) { $("name").value = "조무사"; $("go").textContent = "대화방 들어가기"; }
+
+async function api(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error);
+  return j;
+}
+
+$("go").onclick = async () => {
+  const name = $("name").value.trim();
+  const res = joinRoom ? await api(`/api/rooms/${joinRoom}/join`, { name }) : await api("/api/rooms", { name });
+  me = res.me; roomId = res.roomId;
+  const link = `${location.origin}/?room=${roomId}`;
+  $("title").innerHTML = `${me.name} · 방 ${roomId} · <a href="${link}" target="_blank">다른 사람 초대 링크</a>`;
+  $("start").style.display = "none";
+  $("room").style.display = "flex";
+  $("text").focus();
+  const es = new EventSource(`/api/rooms/${roomId}/events`);
+  es.onmessage = (e) => show(JSON.parse(e.data));
+};
+
+function show(m) {
+  const div = document.createElement("div");
+  div.className = "msg" + (m.from.id === me.id ? " me" : m.from.kind === "ai" ? " ai" : "");
+  const who = document.createElement("div");
+  who.className = "who";
+  who.textContent = m.from.name + (m.from.kind === "ai" ? " (AI)" : "");
+  const text = document.createElement("div");
+  text.textContent = m.text;
+  div.append(who, text);
+  $("log").append(div);
+  $("log").scrollTop = $("log").scrollHeight;
+}
+
+$("send").onsubmit = async (e) => {
+  e.preventDefault();
+  const text = $("text").value.trim();
+  if (!text) return;
+  $("text").value = "";
+  await api(`/api/rooms/${roomId}/messages`, { from: me.id, text });
+};
+</script>
+</body>
+</html>
