@@ -96,15 +96,21 @@ func run() error {
 		TurnTimeout:          cfg.TurnTimeout,
 		MaxSentences:         session.DefaultConfig.MaxSentences,
 	}, logger)
-	var (
-		stt speech.Recognizer  = speech.Unavailable{}
-		tts speech.Synthesizer = speech.Unavailable{}
-	)
+	var stt speech.Recognizer = speech.Unavailable{}
 	if cfg.Clova.Enabled() {
-		clova := speech.NewClova(speech.ClovaConfig(cfg.Clova))
-		stt, tts = clova, clova
+		stt = speech.NewClova(speech.ClovaConfig(cfg.Clova))
 	} else {
-		logger.Warn("NAVER_CLOVA_CLIENT_ID/SECRET are empty: text mode only (no speech recognition or synthesis)")
+		logger.Warn("NAVER_CLOVA_CLIENT_ID/SECRET are empty: no server speech recognition (the tablet can still recognize on device)")
+	}
+	tts, err := speech.NewSynthesizer(ctx, config.Speech{Clova: cfg.Clova, Voice: cfg.Voice})
+	if err != nil {
+		return err
+	}
+	switch {
+	case cfg.Voice.Provider == config.TTSPolly:
+		logger.Info("AI voice: Amazon Polly", "voice", cfg.Voice.Polly.VoiceID, "engine", cfg.Voice.Polly.Engine, "region", cfg.Voice.Polly.Region)
+	case !cfg.Clova.Enabled():
+		logger.Warn("no server voice: the tablet reads replies with its built-in TTS")
 	}
 	policy := companion.Policy{
 		Q:                 q,

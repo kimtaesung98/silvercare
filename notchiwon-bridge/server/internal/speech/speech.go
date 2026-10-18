@@ -1,6 +1,6 @@
-// Package speech turns elder audio into text (STT) and AI sentences into
-// audio (TTS) with Naver Clova. The tablet only records and plays: it never
-// holds a Clova key.
+// Package speech turns elder audio into text (STT) with Naver Clova and AI
+// sentences into audio (TTS) with Clova Voice or Amazon Polly (TTS_PROVIDER).
+// The tablet only records and plays: it never holds a speech key.
 package speech
 
 import (

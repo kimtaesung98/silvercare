@@ -59,3 +59,37 @@ func TestLoadRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadVoice(t *testing.T) {
+	setRequired(t)
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	p := cfg.Voice.Polly
+	if cfg.Voice.Provider != TTSClova || p.Region != "ap-northeast-2" || p.VoiceID != "Seoyeon" || p.Engine != "neural" || p.Rate != "90%" {
+		t.Errorf("voice defaults = %+v", cfg.Voice)
+	}
+
+	t.Setenv("TTS_PROVIDER", "polly")
+	t.Setenv("POLLY_VOICE", "Jihye")
+	cfg, err = Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Voice.Provider != TTSPolly || cfg.Voice.Polly.VoiceID != "Jihye" {
+		t.Errorf("voice = %+v", cfg.Voice)
+	}
+	s, err := LoadSpeech()
+	if err != nil || s.Voice.Provider != TTSPolly {
+		t.Errorf("LoadSpeech = %+v, %v", s, err)
+	}
+
+	t.Setenv("TTS_PROVIDER", "google")
+	if _, err := Load(); err == nil {
+		t.Error("unknown TTS_PROVIDER: want an error")
+	}
+	if _, err := LoadSpeech(); err == nil {
+		t.Error("LoadSpeech with unknown TTS_PROVIDER: want an error")
+	}
+}
