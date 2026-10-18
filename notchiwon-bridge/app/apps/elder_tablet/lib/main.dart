@@ -22,10 +22,10 @@ const deviceToken = String.fromEnvironment('DEVICE_TOKEN');
 /// 어르신 말을 누가 알아들을지.
 ///
 /// - `device` (기본): 태블릿 내장 음성 인식이 알아듣고 글자로 보냅니다. 서버에
-///   Clova 키가 없어도 대화할 수 있습니다.
-/// - `server`: 녹음을 보내고 서버가 Clova로 알아듣습니다.
+///   AWS 음성 설정이 없어도 대화할 수 있습니다.
+/// - `server`: 녹음을 보내고 서버가 Amazon Transcribe로 알아듣습니다.
 ///
-/// AI 목소리는 설정이 없습니다: 서버가 Clova로 만든 음성이 오면 그것을 틀고,
+/// AI 목소리는 설정이 없습니다: 서버가 Amazon Polly로 만든 음성이 오면 그것을 틀고,
 /// 없으면 태블릿 내장 TTS로 읽습니다.
 const speechMode = String.fromEnvironment('SPEECH', defaultValue: 'device');
 

@@ -33,7 +33,7 @@ type wsEnv struct {
 	speech *fakeSpeech
 }
 
-// fakeSpeech is Clova: it hears a fixed sentence and "synthesizes" the text
+// fakeSpeech is Transcribe and Polly: it hears a fixed sentence and "synthesizes" the text
 // itself as audio.
 type fakeSpeech struct {
 	mu     sync.Mutex
@@ -291,7 +291,7 @@ func TestWSInvalidMessages(t *testing.T) {
 		t.Errorf("pong = %v", ev)
 	}
 
-	// Without Clova the audio is refused, but the frame pairing is still enforced.
+	// Without AWS speech the audio is refused, but the frame pairing is still enforced.
 	sess, err := w.q.CreateCompanionSession(context.Background(), db.CreateCompanionSessionParams{ElderID: w.elderID, StartedBy: "ELDER"})
 	if err != nil {
 		t.Fatal(err)
@@ -352,7 +352,7 @@ func TestWSVoiceTurn(t *testing.T) {
 	}
 
 	// A failing synthesis still delivers the sentence as text.
-	w.speech.set("오늘 날씨 좋네", nil, errors.New("clova 500"))
+	w.speech.set("오늘 날씨 좋네", nil, errors.New("polly 500"))
 	c.send("elder.audio", map[string]any{"sessionId": sess.ID, "clientId": "u-10", "audio": map[string]any{"format": "pcm16", "bytes": len(pcm)}})
 	if err := c.ws.Write(context.Background(), websocket.MessageBinary, pcm); err != nil {
 		t.Fatal(err)

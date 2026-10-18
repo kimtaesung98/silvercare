@@ -96,15 +96,14 @@ func run() error {
 		TurnTimeout:          cfg.TurnTimeout,
 		MaxSentences:         session.DefaultConfig.MaxSentences,
 	}, logger)
-	var (
-		stt speech.Recognizer  = speech.Unavailable{}
-		tts speech.Synthesizer = speech.Unavailable{}
-	)
-	if cfg.Clova.Enabled() {
-		clova := speech.NewClova(speech.ClovaConfig(cfg.Clova))
-		stt, tts = clova, clova
+	stt, tts, err := speech.New(ctx, cfg.Speech)
+	if err != nil {
+		return err
+	}
+	if cfg.Speech.Enabled() {
+		logger.Info("speech: Amazon Transcribe and Polly", "region", cfg.Speech.Region, "voice", cfg.Speech.Voice, "engine", cfg.Speech.Engine)
 	} else {
-		logger.Warn("NAVER_CLOVA_CLIENT_ID/SECRET are empty: text mode only (no speech recognition or synthesis)")
+		logger.Warn("no AWS credentials (AWS_PROFILE or access keys): no server speech (the tablet recognizes and speaks on device)")
 	}
 	policy := companion.Policy{
 		Q:                 q,

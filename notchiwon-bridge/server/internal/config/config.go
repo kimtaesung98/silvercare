@@ -57,26 +57,38 @@ type Config struct {
 	FirstSentenceTimeout time.Duration `env:"CONVERSATION_FIRST_SENTENCE_TIMEOUT" envDefault:"6s"`
 	TurnTimeout          time.Duration `env:"CONVERSATION_TURN_TIMEOUT" envDefault:"20s"`
 
-	Clova Clova
+	Speech Speech
 }
 
-// Clova is Naver Clova speech. Without the keys the server runs in text
-// mode: elder.audio fails with STT_FAILED and replies carry no audio.
-type Clova struct {
-	ClientID       string `env:"NAVER_CLOVA_CLIENT_ID"`
-	ClientSecret   string `env:"NAVER_CLOVA_CLIENT_SECRET"`
-	STTURL         string `env:"CLOVA_STT_URL" envDefault:"https://naveropenapi.apigw.ntruss.com/recog/v1/stt"`
-	TTSURL         string `env:"CLOVA_TTS_URL" envDefault:"https://naveropenapi.apigw.ntruss.com/tts-premium/v1/tts"`
-	DefaultSpeaker string `env:"CLOVA_DEFAULT_SPEAKER" envDefault:"nara"`
-	// TTSSpeed is -5 (faster) .. 5 (slower).
-	TTSSpeed int `env:"CLOVA_TTS_SPEED" envDefault:"1"`
+// Speech is Amazon speech: Transcribe hears the elder (STT) and Polly voices
+// AI sentences (TTS). Without AWS credentials the server has no speech: the
+// tablet recognizes and speaks on device, and elder.audio fails with
+// STT_FAILED. The AWS SDK reads the credentials itself (an `aws login`
+// profile, or access keys); they are here to tell whether speech is on.
+type Speech struct {
+	Profile         string `env:"AWS_PROFILE"`
+	AccessKeyID     string `env:"AWS_ACCESS_KEY_ID"`
+	SecretAccessKey string `env:"AWS_SECRET_ACCESS_KEY"`
+	Region          string `env:"AWS_REGION" envDefault:"ap-southeast-2"`
+	// LanguageCode is the Transcribe language.
+	LanguageCode string `env:"TRANSCRIBE_LANGUAGE" envDefault:"ko-KR"`
+	// Voice is a Korean Polly voice: Seoyeon (standard, neural, generative)
+	// or Jihye (neural).
+	Voice  string `env:"POLLY_VOICE" envDefault:"Seoyeon"`
+	Engine string `env:"POLLY_ENGINE" envDefault:"neural"`
+	// Rate is an SSML prosody rate; elders follow a slightly slower voice
+	// better. Empty or "100%" sends plain text.
+	Rate string `env:"POLLY_RATE" envDefault:"90%"`
 }
 
-// Enabled reports whether both keys are set.
-func (c Clova) Enabled() bool { return c.ClientID != "" && c.ClientSecret != "" }
+// Enabled reports whether AWS credentials are configured: a profile, or
+// both access keys.
+func (s Speech) Enabled() bool {
+	return s.Profile != "" || (s.AccessKeyID != "" && s.SecretAccessKey != "")
+}
 
-// LoadClova reads only the Clova settings (for cmd/admin).
-func LoadClova() (Clova, error) { return env.ParseAs[Clova]() }
+// LoadSpeech reads only the speech settings (for cmd/admin).
+func LoadSpeech() (Speech, error) { return env.ParseAs[Speech]() }
 
 // Load reads Config from the process environment and checks it.
 func Load() (Config, error) {
@@ -92,9 +104,6 @@ func Load() (Config, error) {
 	}
 	if cfg.FillerAfter <= 0 || cfg.FirstSentenceTimeout <= 0 || cfg.TurnTimeout < cfg.FirstSentenceTimeout {
 		return Config{}, errors.New("conversation timings must be positive, with CONVERSATION_TURN_TIMEOUT >= CONVERSATION_FIRST_SENTENCE_TIMEOUT")
-	}
-	if cfg.Clova.TTSSpeed < -5 || cfg.Clova.TTSSpeed > 5 {
-		return Config{}, errors.New("CLOVA_TTS_SPEED must be between -5 and 5")
 	}
 	if _, err := time.LoadLocation(cfg.TimeZone); err != nil {
 		return Config{}, err

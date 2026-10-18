@@ -33,6 +33,7 @@ flowchart LR
 
 | 날짜 | 작업 | 내용 |
 | --- | --- | --- |
+| 2026-10-18 | 음성을 Amazon으로 교체 | Clova를 모두 빼고 서버 인식은 Amazon Transcribe, AI 목소리는 Polly. `aws login` 프로필(`AWS_PROFILE`)로 켬 |
 | 2026-10-11 | PR #13 태블릿 음성 | 기기 음성 인식이 어르신 말을 글자로 보내고, AI 답은 기기 TTS로 읽음. Clova 키를 넣으면 `scripts/dev.sh`가 자동으로 Clova 경로를 씀 |
 | 2026-10-11 | 에뮬레이터 실행 | `TABLET_DEVICE="emulator-5558"`로 태블릿 앱 실행까지 확인. 음성 대화는 아직 |
 | 2026-10-11 | PR #12 개발 스크립트 | `.env` 하나로 서버·데모 데이터·앱 세 개를 실행하는 `scripts/dev.sh` |
@@ -43,14 +44,14 @@ flowchart LR
 | 키 | 없을 때 | 넣으면 |
 | --- | --- | --- |
 | `ANTHROPIC_API_KEY` | 매 턴 대체 문장, 브리핑·하루 소식은 어르신 말 인용 | 실제 대화와 요약 |
-| `NAVER_CLOVA_CLIENT_ID/SECRET` | 태블릿 내장 음성 인식·TTS | Clova 인식·목소리 (넣은 뒤 `scripts/dev.sh openers`) |
+| `AWS_PROFILE` (또는 AWS 액세스 키) | 태블릿 내장 음성 인식·TTS | Amazon Transcribe 인식·Polly 목소리 (넣은 뒤 `scripts/dev.sh openers`) |
 | `KAKAO_MOBILITY_API_KEY` | 예정 시각까지 남은 분을 ETA로 | 실제 도로 ETA |
 | `FCM_CREDENTIALS_FILE` + 앱 Firebase 값 | 위급 알림은 앱 목록에만 (30초마다 새로 읽음) | 휴대폰 푸시 |
 
 ## 5. 다음 할 일
 
 - [ ] emulator-5558에서 말동무 버튼을 눌러 음성 대화 확인 ([CR-14](./code-review.md#cr-14))
-- [ ] Clova 결제 후 키를 `.env`에 넣고 `scripts/dev.sh openers`
+- [ ] `aws login` 후 `AWS_PROFILE`을 `.env`에 넣고 `scripts/dev.sh openers`
 - [ ] Claude 키로 대화 품질 확인 (단계 3 검토)
 - [ ] 안전 경로 고치기: [CR-01](./code-review.md#cr-01) 규칙 필터, [CR-02](./code-review.md#cr-02) 잘린 답의 `flag_concern`
 - [ ] [CR-03](./code-review.md#cr-03) 긴 대화 요약

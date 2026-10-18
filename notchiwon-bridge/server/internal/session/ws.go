@@ -726,7 +726,7 @@ func (s *wsSink) Filler(sessionID uuid.UUID, turn int32, clip db.OpenerClip) {
 const ttsTimeout = 5 * time.Second
 
 // Reply synthesizes the sentence and sends it with its MP3. Without audio
-// (no Clova key, or TTS failed) the tablet still shows the text.
+// (no AWS key, or TTS failed) the tablet still shows the text.
 func (s *wsSink) Reply(u db.Utterance) {
 	c := s.c
 	c.later(func() {

@@ -458,7 +458,7 @@ func (s *Server) ListOpenerClips(ctx context.Context, _ apigen.ListOpenerClipsRe
 }
 
 // GetOpenerClipAudio implements GET /tablet/opener-clips/{clipId}/audio.
-// A clip without audio yet is synthesized with Clova TTS on first request.
+// A clip without audio yet is synthesized with Amazon Polly on first request.
 func (s *Server) GetOpenerClipAudio(ctx context.Context, req apigen.GetOpenerClipAudioRequestObject) (apigen.GetOpenerClipAudioResponseObject, error) {
 	mp3, err := s.deps.Openers.Audio(ctx, req.ClipId, s.deps.TTS)
 	switch {

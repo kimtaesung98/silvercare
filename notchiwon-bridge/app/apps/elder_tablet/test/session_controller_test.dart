@@ -211,7 +211,7 @@ void main() {
     await startSession();
     channel.serverSendsEvent('error', {
       'code': 'STT_FAILED',
-      'message': 'clova 502',
+      'message': 'transcribe 502',
     });
     await settle();
 
@@ -230,7 +230,7 @@ void main() {
     expect(mic.stopped, 1);
   });
 
-  group('기기 음성 인식 (Clova 없이)', () {
+  group('기기 음성 인식 (서버 음성 없이)', () {
     late FakeRecognizer recognizer;
 
     setUp(() async {

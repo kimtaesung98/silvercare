@@ -59,3 +59,35 @@ func TestLoadRejects(t *testing.T) {
 		})
 	}
 }
+
+func TestLoadSpeech(t *testing.T) {
+	setRequired(t)
+	t.Setenv("AWS_PROFILE", "")
+	t.Setenv("AWS_ACCESS_KEY_ID", "")
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "")
+	t.Setenv("AWS_REGION", "")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	s := cfg.Speech
+	if s.Enabled() || s.Region != "ap-southeast-2" || s.LanguageCode != "ko-KR" || s.Voice != "Seoyeon" || s.Engine != "neural" || s.Rate != "90%" {
+		t.Errorf("speech defaults = %+v", s)
+	}
+
+	t.Setenv("AWS_PROFILE", "silvercare")
+	if s, _ := LoadSpeech(); !s.Enabled() {
+		t.Error("a profile alone should enable speech")
+	}
+	t.Setenv("AWS_PROFILE", "")
+	t.Setenv("AWS_ACCESS_KEY_ID", "AKIAEXAMPLE")
+	if s, _ := LoadSpeech(); s.Enabled() {
+		t.Error("one access key alone should not enable speech")
+	}
+	t.Setenv("AWS_SECRET_ACCESS_KEY", "secret")
+	t.Setenv("POLLY_VOICE", "Jihye")
+	s, err = LoadSpeech()
+	if err != nil || !s.Enabled() || s.Voice != "Jihye" {
+		t.Errorf("LoadSpeech = %+v, %v", s, err)
+	}
+}
