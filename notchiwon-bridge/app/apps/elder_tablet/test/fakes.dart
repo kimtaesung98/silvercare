@@ -200,7 +200,10 @@ class FakeRecognizer implements SpeechRecognizerPort {
   bool get listening => _current != null;
 
   @override
-  Future<String?> listen({void Function()? onSpeech}) {
+  Future<String?> listen({
+    void Function()? onSpeech,
+    void Function(double level)? onLevel,
+  }) {
     listens++;
     return (_current = Completer<String?>()).future;
   }

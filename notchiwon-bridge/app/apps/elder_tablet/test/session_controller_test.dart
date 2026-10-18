@@ -84,12 +84,51 @@ void main() {
     expect(controller.elderName, '김영자 어르신');
   });
 
-  test('세션이 시작되면 대화 화면으로 바뀌고 마이크를 연다', () async {
+  test('앱이 켜지면 세션 없이도 마이크를 열고 소리 크기를 보여준다', () async {
+    expect(mic.started, 1);
+    expect(controller.micOn, isTrue);
+
+    mic.push(FakeMicrophone.tone(0.15));
+    await settle();
+    expect(controller.micLevel.value, closeTo(0.5, 0.05));
+  });
+
+  test('세션이 시작되면 대화 화면으로 바뀌고, 마이크는 다시 열지 않는다', () async {
     await startSession(eta: 12);
 
     expect(controller.screen, ScreenState.talking);
     expect(controller.etaMinutes, 12);
     expect(mic.started, 1);
+  });
+
+  test('대기 중에 말하면 말동무를 요청하고, 세션이 열리면 그 말을 보낸다', () async {
+    await ready();
+    await speak();
+
+    expect(channel.lastSent('session.request'), isNotNull);
+    expect(channel.lastSent('elder.audio'), isNull);
+
+    await startSession();
+
+    final sent = channel.lastSent('elder.audio');
+    expect(sent, isNotNull);
+    expect((sent!['data'] as Map)['sessionId'], 's-1');
+  });
+
+  test('말로 요청한 말동무가 거절되면 그 말을 버리고, 잠시 다시 요청하지 않는다', () async {
+    await ready();
+    await speak();
+    channel.serverSendsEvent('session.rejected', {'reason': 'BEDTIME'});
+    await settle();
+    await speak();
+
+    final requests = channel.sentEvents.where(
+      (e) => e['type'] == 'session.request',
+    );
+    expect(requests, hasLength(1));
+
+    await startSession();
+    expect(channel.lastSent('elder.audio'), isNull);
   });
 
   test('조무사가 2분 안으로 들어오면 도착 임박 화면이다', () async {
@@ -218,7 +257,7 @@ void main() {
     expect(controller.notice, contains('한 번만 더 말씀'));
   });
 
-  test('세션이 끝나면 대기 화면으로 돌아가고 마이크를 닫는다', () async {
+  test('세션이 끝나면 대기 화면으로 돌아가고, 마이크는 계속 듣는다', () async {
     await startSession();
     channel.serverSendsEvent('session.ended', {
       'sessionId': 's-1',
@@ -227,7 +266,7 @@ void main() {
     await settle();
 
     expect(controller.screen, ScreenState.idle);
-    expect(mic.stopped, 1);
+    expect(mic.stopped, 0);
   });
 
   group('기기 음성 인식 (서버 음성 없이)', () {
@@ -278,7 +317,7 @@ void main() {
       expect(recognizer.listening, isTrue);
     });
 
-    test('세션이 끝나면 음성 인식을 멈춘다', () async {
+    test('세션이 끝나도 계속 듣고, 대기 중에 말하면 말동무를 요청한다', () async {
       await startSession();
       channel.serverSendsEvent('session.ended', {
         'sessionId': 's-1',
@@ -286,7 +325,11 @@ void main() {
       });
       await settle();
 
-      expect(recognizer.listening, isFalse);
+      expect(recognizer.listening, isTrue);
+
+      recognizer.say('심심하네');
+      await settle();
+      expect(channel.lastSent('session.request'), isNotNull);
     });
   });
 }

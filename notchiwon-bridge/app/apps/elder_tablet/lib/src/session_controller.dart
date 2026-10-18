@@ -32,6 +32,10 @@ class TabletInfo {
 /// 어르신 발화를 서버로 보냅니다 (녹음이면 `elder.audio`, 기기가 알아들은
 /// 글자면 `elder.text`).
 ///
+/// 마이크는 앱이 켜져 있는 동안 계속 듣습니다. 대화가 없을 때 어르신이
+/// 말하면 말동무를 요청하고, 세션이 열리면 그 말을 첫 발화로 보냅니다
+/// (architecture.md 결정 43).
+///
 /// 화면은 이 객체만 보고 그립니다.
 class SessionController extends ChangeNotifier {
   SessionController({
@@ -42,6 +46,8 @@ class SessionController extends ChangeNotifier {
     this.loadInfo,
     this.arrivingMinutes = 2,
     this.muteWhileSpeaking = true,
+    this.startOnSpeech = true,
+    this.requestCooldown = const Duration(seconds: 30),
   });
 
   /// `/ws/elder` 연결.
@@ -69,6 +75,17 @@ class SessionController extends ChangeNotifier {
   /// 있습니다 (architecture.md 결정 22).
   final bool muteWhileSpeaking;
 
+  /// 대화가 없을 때 어르신이 말하면 말동무를 시작할지.
+  final bool startOnSpeech;
+
+  /// 말로 말동무를 요청한 뒤 이만큼은 다시 요청하지 않습니다 (취침 시간처럼
+  /// 거절될 때 말할 때마다 요청하지 않게).
+  final Duration requestCooldown;
+
+  /// 마이크에 들어오는 소리 크기 (0~1). 화면의 소리 막대가 봅니다.
+  /// 조각마다 바뀌므로 [notifyListeners]와 따로 둡니다.
+  final micLevel = ValueNotifier<double>(0);
+
   final _subs = <StreamSubscription<dynamic>>[];
   final _captions = <CaptionLine>[];
 
@@ -81,6 +98,12 @@ class SessionController extends ChangeNotifier {
   TabletInfo? _info;
   String? _notice;
   var _clientSeq = 0;
+  bool? _micOn;
+
+  // 대화가 없을 때 들린 말: 세션이 열리면 첫 발화로 보냅니다.
+  Heard? _pending;
+  bool _awaitingSession = false;
+  DateTime? _requestedAt;
 
   // 측정값 (development-process.md 단계 4).
   DateTime? _utteranceEnd;
@@ -123,6 +146,9 @@ class SessionController extends ChangeNotifier {
   /// AI가 말하는 중인지 (아니면 듣는 중).
   bool get speaking => queue.isBusy;
 
+  /// 마이크가 열렸는지 (여는 중이면 null, 권한이 없거나 실패하면 false).
+  bool? get micOn => _micOn;
+
   /// 어르신에게 보여줄 안내 (거절 사유, 오류).
   String? get notice => _notice;
 
@@ -137,8 +163,10 @@ class SessionController extends ChangeNotifier {
       ..add(queue.started.listen(_onPlaybackStarted))
       ..add(queue.finished.listen(_onPlaybackFinished))
       ..add(input.heard.listen(_onHeard))
-      ..add(input.speechStarted.listen((_) => _onSpeechStarted()));
+      ..add(input.speechStarted.listen((_) => _onSpeechStarted()))
+      ..add(input.levels.listen((level) => micLevel.value = level));
     unawaited(_loadTabletInfo());
+    unawaited(_openMic());
     await socket.start();
   }
 
@@ -173,7 +201,19 @@ class SessionController extends ChangeNotifier {
     unawaited(input.close());
     unawaited(queue.close());
     unawaited(socket.close());
+    micLevel.dispose();
     super.dispose();
+  }
+
+  Future<void> _openMic() async {
+    try {
+      await input.start();
+      _micOn = true;
+    } on Object catch (e) {
+      _micOn = false;
+      debugPrint('마이크 열기 실패: $e');
+    }
+    notifyListeners();
   }
 
   Future<void> _loadTabletInfo() async {
@@ -191,6 +231,10 @@ class SessionController extends ChangeNotifier {
 
   void _onState(ConnectionState state) {
     _connected = state == ConnectionState.connected;
+    if (!_connected) {
+      _pending = null;
+      _awaitingSession = false;
+    }
     notifyListeners();
   }
 
@@ -211,6 +255,8 @@ class SessionController extends ChangeNotifier {
         _captions.clear();
         _enterSession(sessionId, mode, caregiverEtaMinutes);
       case SessionRejected(:final reason):
+        _pending = null;
+        _awaitingSession = false;
         _notice = _rejectionText(reason);
         notifyListeners();
       case SessionEnded():
@@ -262,7 +308,11 @@ class SessionController extends ChangeNotifier {
     _mode = mode;
     _etaMinutes = eta;
     _notice = null;
-    unawaited(input.start());
+    _requestedAt = null;
+    _awaitingSession = false;
+    final pending = _pending;
+    _pending = null;
+    if (pending != null) _sendHeard(id, pending);
     notifyListeners();
   }
 
@@ -271,7 +321,8 @@ class SessionController extends ChangeNotifier {
     _mode = null;
     _etaMinutes = null;
     await queue.clear();
-    await input.stop();
+    // 마이크는 닫지 않습니다. AI 말이 끊겼으니 다시 듣기만 합니다.
+    input.muted = false;
     notifyListeners();
   }
 
@@ -322,7 +373,28 @@ class SessionController extends ChangeNotifier {
 
   void _onHeard(Heard heard) {
     final id = _sessionId;
-    if (id == null) return;
+    if (id == null) {
+      _startBySpeech(heard);
+      return;
+    }
+    _sendHeard(id, heard);
+  }
+
+  /// 대화가 없을 때 어르신이 말했습니다: 말동무를 요청하고 그 말을 들고
+  /// 있다가 세션이 열리면 보냅니다.
+  void _startBySpeech(Heard heard) {
+    if (!startOnSpeech || !companionEnabled || !_connected) return;
+    if (_awaitingSession) return; // 첫마디는 이미 들고 있습니다.
+    final now = DateTime.now();
+    final last = _requestedAt;
+    if (last != null && now.difference(last) < requestCooldown) return;
+    _requestedAt = now;
+    _awaitingSession = true;
+    _pending = heard;
+    requestCompanion();
+  }
+
+  void _sendHeard(String id, Heard heard) {
     _utteranceEnd = DateTime.now();
     _utteranceEndToOpenerMs = null;
     _openerEndToFirstReplyMs = null;

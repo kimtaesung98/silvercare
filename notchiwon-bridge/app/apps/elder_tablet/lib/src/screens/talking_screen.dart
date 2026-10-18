@@ -1,5 +1,8 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:ui/ui.dart';
+
+import 'mic_meter.dart';
 
 /// 대화 화면: 방금 나눈 말과, 지금 듣고 있는지 말하고 있는지를 보여줍니다.
 class TalkingScreen extends StatelessWidget {
@@ -7,6 +10,8 @@ class TalkingScreen extends StatelessWidget {
     required this.captions,
     required this.speaking,
     required this.onEnd,
+    required this.micLevel,
+    this.micOn,
     this.etaMinutes,
     super.key,
   });
@@ -21,6 +26,12 @@ class TalkingScreen extends StatelessWidget {
 
   /// 조무사 도착까지 남은 분 (픽업 브릿지에서만).
   final int? etaMinutes;
+
+  /// 소리 크기 (0~1).
+  final ValueListenable<double> micLevel;
+
+  /// 마이크가 열렸는지 (여는 중이면 null).
+  final bool? micOn;
 
   @override
   Widget build(BuildContext context) {
@@ -46,7 +57,9 @@ class TalkingScreen extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           Expanded(child: CaptionBoard(lines: captions)),
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
+          MicMeter(level: micLevel, on: micOn),
+          const SizedBox(height: 16),
           BigButton(
             label: '그만하기',
             icon: Icons.close,
