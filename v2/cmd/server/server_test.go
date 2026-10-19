@@ -34,7 +34,7 @@ func post(t *testing.T, url string, body, out any) int {
 func TestRoomFlow(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	s := &server{hub: chat.NewHub(), newBrain: func() companion.Brain { return &companion.SimpleBrain{} }, ctx: ctx}
+	s := newServer(ctx, func() companion.Brain { return &companion.SimpleBrain{} }, nil)
 	ts := httptest.NewServer(s.routes())
 	defer ts.Close()
 
@@ -79,6 +79,27 @@ func TestRoomFlow(t *testing.T) {
 	}
 	if got[0].From.ID != elder.Me.ID || got[1].From.Kind != chat.AI {
 		t.Fatalf("%+v", got)
+	}
+
+	// 조무사 말에는 말동무가 답하지 않고, 어르신의 위급한 말에는 AI 대신 안전 지킴이가 답함
+	post(t, ts.URL+"/api/rooms/"+elder.RoomID+"/messages", postRequest{From: carer.Me.ID, Text: "곧 도착해요"}, nil)
+	post(t, ts.URL+"/api/rooms/"+elder.RoomID+"/messages", postRequest{From: elder.Me.ID, Text: "다리가 너무 아파"}, nil)
+	got = got[:0]
+	for len(got) < 3 {
+		select {
+		case m := <-lines:
+			got = append(got, m)
+		case <-time.After(2 * time.Second):
+			t.Fatalf("timeout, got %+v", got)
+		}
+	}
+	if got[0].From.ID != carer.Me.ID || got[1].Tags["safety"] != "pain" || got[2].From.Kind != chat.System {
+		t.Fatalf("%+v", got)
+	}
+	select {
+	case m := <-lines:
+		t.Fatalf("unexpected %+v", m)
+	case <-time.After(200 * time.Millisecond):
 	}
 
 	if c := post(t, ts.URL+"/api/rooms/"+elder.RoomID+"/messages", postRequest{From: "stranger", Text: "hi"}, nil); c != http.StatusForbidden {

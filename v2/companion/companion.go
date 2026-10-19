@@ -24,6 +24,8 @@ type Companion struct {
 	Self  chat.Participant
 	Brain Brain
 	Log   *slog.Logger
+	// AnswerOnly가 있으면 그 참가자의 말에만 답합니다 (예: 어르신). 비우면 모든 사람에게.
+	AnswerOnly string
 }
 
 // Join은 말동무를 방에 넣고, ctx가 끝날 때까지 사람 메시지에 답합니다.
@@ -46,7 +48,7 @@ func (c *Companion) Join(ctx context.Context, roomID string) error {
 				if !ok {
 					return
 				}
-				if m.From.Kind != chat.Human {
+				if !c.shouldAnswer(m) {
 					continue
 				}
 				c.answer(ctx, roomID)
@@ -54,6 +56,14 @@ func (c *Companion) Join(ctx context.Context, roomID string) error {
 		}
 	}()
 	return nil
+}
+
+// shouldAnswer: 사람이 쓴 말이고, 모듈이 맡지 않았고(예: 위급), 답할 상대일 때만.
+func (c *Companion) shouldAnswer(m chat.Message) bool {
+	if m.From.Kind != chat.Human || m.Tags[chat.TagHandledBy] != "" {
+		return false
+	}
+	return c.AnswerOnly == "" || m.From.ID == c.AnswerOnly
 }
 
 func (c *Companion) answer(ctx context.Context, roomID string) {
