@@ -3,6 +3,7 @@
 > 피그마에서 그릴 화면입니다. 파일: [실버케어 화면](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt). 프레임을 만들면 아래 표의 "피그마" 칸에 링크를 적습니다.
 > 색과 글씨 크기는 파일의 `실버케어` 변수 모음에, 말풍선·큰 버튼·듣는 중 표시는 `컴포넌트` 섹션에 있습니다.
 > 화면이 기준이고 코드는 화면을 따라갑니다 ([DIRECTION.md](./DIRECTION.md) 5절).
+> 여기는 **고유 화면**만 있습니다. 로그인·내 정보·설정 같은 기본 화면은 [mvp/common/screens.md](./mvp/common/screens.md)에, 그중 실버케어가 쓰는 것은 [mvp/silvercare/mvp.md](./mvp/silvercare/mvp.md) 5절에 있습니다. 화면 하나의 세부는 [화면 명세 틀](./mvp/common/templates/screen.md)로 씁니다.
 
 ## 어르신 태블릿
 

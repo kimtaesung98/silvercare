@@ -1,6 +1,7 @@
 # 1층: 요구사항
 
 > 상태: 초안 · 고친 날: 2026-10-20
+> 이 문서는 **실버케어 고유 MVP**의 요구사항입니다. 로그인·내 정보·설정·화면 규칙 같은 공통 기본기는 [../mvp/common/requirements.md](../mvp/common/requirements.md)에 있습니다.
 > 이 문서는 **누가 무엇을 원하나**만 적습니다. 어떻게 만드는지는 2층 중위 명세가 정합니다.
 > 규칙은 [README.md](./README.md) 2절을 따릅니다. 근거의 "결정 N"은 [이전 결정 표](../../notchiwon-bridge/docs/architecture.md)의 번호입니다.
 

@@ -18,7 +18,7 @@
 
 ## 2. 쓰는 규칙 (모든 층 공통)
 
-1. **정해진 틀**: 2층은 [templates/mid.md](./templates/mid.md), 3층은 [templates/low.md](./templates/low.md)의 절 순서와 제목을 그대로 씁니다. 쓸 것이 없는 절은 지우지 않고 "해당 없음"이라고 적습니다.
+1. **정해진 틀**: 2층은 [templates/mid.md](./templates/mid.md), 3층 부품은 [templates/low.md](./templates/low.md), 3층 화면은 [../mvp/common/templates/screen.md](../mvp/common/templates/screen.md)의 절 순서와 제목을 그대로 씁니다. 쓸 것이 없는 절은 지우지 않고 "해당 없음"이라고 적습니다.
 2. **한 줄에 요구사항 하나**: 번호, 강도, 내용, 근거, 수락 기준 번호를 표 한 줄에 씁니다.
 3. **강도는 셋 중 하나**: **반드시**(어기면 틀림), **되도록**(어기려면 이유를 적음), **해도 됨**(만드는 쪽이 고름. 고른 것을 기록).
 4. **숫자는 단위까지**: "짧게", "적당히", "빠르게"는 쓰지 않습니다. 모르면 열린 질문으로 둡니다.
@@ -53,6 +53,8 @@
 | `mid/caregiver-app.md` 조무사 앱 | 앱 | `low/caregiver-app/screens.md`, `low/caregiver-app/alerts.md` 위급 알림 받기 | 빈칸 |
 | `mid/guardian-app.md` 보호자 앱 | 앱 | `low/guardian-app/screens.md` | 빈칸 (나중) |
 | `mid/platform.md` 공통 기반 | 기반 | `low/platform/contracts.md` 메시지 약속, `low/platform/storage.md` 보관과 개인정보, `low/platform/auth.md` 기기·사람 확인, `low/platform/ops.md` 실행·키·검사 | 빈칸 |
+
+로그인, 내 정보, 설정 같은 기본기는 여기서 다시 쓰지 않고 [../mvp/](../mvp/README.md)의 공통 MVP 번호(`MVP-C-…`, `MVP-UI-…`)로 가리킵니다. 실버케어가 무엇을 들여왔는지는 [../mvp/silvercare/mvp.md](../mvp/silvercare/mvp.md)에 있습니다.
 
 처음 만들 순서 (추천): `requirements.md` 확정 → `mid/voice.md` → `low/voice/recorder.md`(첫 쌍둥이 시험) → `mid/chat-core.md` → `mid/safety.md` → 나머지.
 녹음이 첫 대상인 이유: 주인이 처음 든 예이고, 이전 버전에서 가장 오래 막힌 곳(에뮬레이터 마이크)이라 명세가 빈칸을 가장 많이 드러냅니다.
