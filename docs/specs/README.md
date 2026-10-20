@@ -18,7 +18,7 @@
 
 ## 2. 쓰는 규칙 (모든 층 공통)
 
-1. **정해진 틀**: 2층은 [templates/mid.md](./templates/mid.md), 3층은 [templates/low.md](./templates/low.md)의 절 순서와 제목을 그대로 씁니다. 쓸 것이 없는 절은 지우지 않고 "해당 없음"이라고 적습니다.
+1. **정해진 틀**: 2층은 [templates/mid.md](./templates/mid.md), 3층 부품은 [templates/low.md](./templates/low.md), 3층 화면은 [templates/screen.md](./templates/screen.md)의 절 순서와 제목을 그대로 씁니다. 쓸 것이 없는 절은 지우지 않고 "해당 없음"이라고 적습니다.
 2. **한 줄에 요구사항 하나**: 번호, 강도, 내용, 근거, 수락 기준 번호를 표 한 줄에 씁니다.
 3. **강도는 셋 중 하나**: **반드시**(어기면 틀림), **되도록**(어기려면 이유를 적음), **해도 됨**(만드는 쪽이 고름. 고른 것을 기록).
 4. **숫자는 단위까지**: "짧게", "적당히", "빠르게"는 쓰지 않습니다. 모르면 열린 질문으로 둡니다.
@@ -49,10 +49,13 @@
 | `mid/voice.md` 음성 | 모듈 | `low/voice/recorder.md` 녹음기, `low/voice/segmenter.md` 말 구간 자르기, `low/voice/stt.md` 말을 글로, `low/voice/tts.md` 글을 말로, `low/voice/playback.md` 재생 순서 | 빈칸 |
 | `mid/summary.md` 요약 | 모듈 | `low/summary/briefing.md` 조무사 브리핑, `low/summary/daily-news.md` 하루 소식 | 빈칸 |
 | `mid/pickup.md` 픽업 대기 | 서비스 | `low/pickup/trip.md` 출발과 위치, `low/pickup/eta.md` 남은 시간, `low/pickup/room-rules.md` 방 열고 닫기 | 빈칸 |
-| `mid/elder-tablet.md` 어르신 태블릿 앱 | 앱 | `low/elder-tablet/screens.md` 화면과 상태, `low/elder-tablet/kiosk.md` 화면 고정과 계속 켜 두기 | 빈칸 |
-| `mid/caregiver-app.md` 조무사 앱 | 앱 | `low/caregiver-app/screens.md`, `low/caregiver-app/alerts.md` 위급 알림 받기 | 빈칸 |
-| `mid/guardian-app.md` 보호자 앱 | 앱 | `low/guardian-app/screens.md` | 빈칸 (나중) |
+| `mid/ui-system.md` 공통 화면 규칙 | 앱 공통 | `low/ui/tokens.md` 색·글씨·간격 변수, `low/ui/components.md` 컴포넌트 짝 표, `low/ui/states.md` 다섯 가지 모습, `low/ui/copy.md` 문구 규칙과 공통 문구 | 빈칸 |
+| `mid/elder-tablet.md` 어르신 태블릿 앱 | 앱 | 화면: `low/elder-tablet/screen-idle.md` 대기, `screen-talk.md` 대화, `screen-arriving.md` 도착 임박, `screen-after-alert.md` 위급 뒤, `screen-setup.md` 직원용 처음 설정 · 부품: `navigation.md` 화면 지도, `kiosk.md` 화면 고정과 계속 켜 두기 | 빈칸 |
+| `mid/caregiver-app.md` 조무사 앱 | 앱 | 화면: `low/caregiver-app/screen-login.md` 로그인, `screen-today.md` 오늘 방문, `screen-trip.md` 이동 중, `screen-briefing.md` 브리핑, `screen-alert.md` 위급, `screen-me.md` 내 정보와 설정 · 부품: `navigation.md` 화면 지도, `alerts.md` 위급 알림 받기 | 빈칸 |
+| `mid/guardian-app.md` 보호자 앱 | 앱 | 화면: `low/guardian-app/screen-login.md`, `screen-home.md`, `screen-daily.md` 하루 소식, `screen-alert.md`, `screen-settings.md` 안부 시각, `screen-me.md` · 부품: `navigation.md` | 빈칸 (나중) |
 | `mid/platform.md` 공통 기반 | 기반 | `low/platform/contracts.md` 메시지 약속, `low/platform/storage.md` 보관과 개인정보, `low/platform/auth.md` 기기·사람 확인, `low/platform/ops.md` 실행·키·검사 | 빈칸 |
+
+화면 명세는 피그마 프레임이 먼저입니다. 프레임이 없는 화면은 명세 상태가 `빈칸`에서 넘어가지 않습니다.
 
 처음 만들 순서 (추천): `requirements.md` 확정 → `mid/voice.md` → `low/voice/recorder.md`(첫 쌍둥이 시험) → `mid/chat-core.md` → `mid/safety.md` → 나머지.
 녹음이 첫 대상인 이유: 주인이 처음 든 예이고, 이전 버전에서 가장 오래 막힌 곳(에뮬레이터 마이크)이라 명세가 빈칸을 가장 많이 드러냅니다.
