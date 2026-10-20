@@ -46,7 +46,7 @@
 | `mid/chat-core.md` 대화 바탕 | 바탕 | `low/chat/room.md` 방과 참가자, `low/chat/message.md` 메시지와 표시, `low/chat/delivery.md` 실시간 전달, `low/chat/module-slot.md` 모듈 자리 | 빈칸 |
 | `mid/companion.md` 말동무 AI | 참가자 | `low/companion/turn.md` 한 턴 만들기(0번 문장 포함), `low/companion/brain.md` 생각하는 부분(Claude와 대체 동작), `low/companion/limits.md` 시간·토큰 한도 | 빈칸 |
 | `mid/safety.md` 위급 필터 | 모듈 | `low/safety/rules.md` 규칙 필터, `low/safety/guard.md` 안전 지킴이와 안심 문장, `low/safety/escalation.md` 사람에게 알리기 | 빈칸 |
-| `mid/voice.md` 음성 | 모듈 | `low/voice/recorder.md` 녹음기, `low/voice/segmenter.md` 말 구간 자르기, `low/voice/stt.md` 말을 글로, `low/voice/tts.md` 글을 말로, `low/voice/playback.md` 재생 순서 | 빈칸 |
+| `mid/voice.md` 음성 | 모듈 | `low/voice/recorder.md` 녹음기 (초안), `low/voice/segmenter.md` 말 구간 자르기, `low/voice/stt.md` 말을 글로, `low/voice/tts.md` 글을 말로, `low/voice/playback.md` 재생 순서 | 초안 |
 | `mid/summary.md` 요약 | 모듈 | `low/summary/briefing.md` 조무사 브리핑, `low/summary/daily-news.md` 하루 소식 | 빈칸 |
 | `mid/pickup.md` 픽업 대기 | 서비스 | `low/pickup/trip.md` 출발과 위치, `low/pickup/eta.md` 남은 시간, `low/pickup/room-rules.md` 방 열고 닫기 | 빈칸 |
 | `mid/elder-tablet.md` 어르신 태블릿 앱 | 앱 | `low/elder-tablet/screens.md` 화면과 상태, `low/elder-tablet/kiosk.md` 화면 고정과 계속 켜 두기 | 빈칸 |
