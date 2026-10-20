@@ -109,3 +109,35 @@ func TestRoomFlow(t *testing.T) {
 		t.Fatalf("no room %d", c)
 	}
 }
+
+// 태블릿이 연 방을 조무사 화면이 목록에서 찾을 수 있어야 합니다. 최근 방이 먼저 옵니다.
+func TestListRooms(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	s := newServer(ctx, func() companion.Brain { return &companion.SimpleBrain{} }, nil)
+	ts := httptest.NewServer(s.routes())
+	defer ts.Close()
+
+	var a, b joinResponse
+	post(t, ts.URL+"/api/rooms", joinRequest{Name: "김순자"}, &a)
+	post(t, ts.URL+"/api/rooms", joinRequest{Name: "이영희"}, &b)
+
+	resp, err := http.Get(ts.URL + "/api/rooms")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var rooms []roomInfo
+	if err := json.NewDecoder(resp.Body).Decode(&rooms); err != nil {
+		t.Fatal(err)
+	}
+	if len(rooms) != 2 || rooms[0].ID != b.RoomID || rooms[0].Elder != "이영희" || rooms[1].ID != a.RoomID {
+		t.Fatalf("%+v", rooms)
+	}
+
+	h, err := http.Get(ts.URL + "/api/health")
+	if err != nil || h.StatusCode != 200 {
+		t.Fatalf("health %v %v", h, err)
+	}
+	h.Body.Close()
+}

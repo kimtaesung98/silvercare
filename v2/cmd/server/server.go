@@ -9,7 +9,9 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/kimtaesung98/silvercare/v2/chat"
 	"github.com/kimtaesung98/silvercare/v2/companion"
@@ -28,6 +30,17 @@ type server struct {
 	// ctx가 끝나면 말동무들도 방에서 나갑니다.
 	ctx    context.Context
 	nextID atomic.Int64
+
+	// rooms는 이 서비스가 연 방 목록입니다. 조무사 화면이 어르신 방을 찾을 때 씁니다.
+	mu    sync.Mutex
+	rooms []roomInfo
+}
+
+// roomInfo는 열린 방 하나의 안내입니다. 바탕(chat)이 아니라 서비스가 들고 있습니다.
+type roomInfo struct {
+	ID     string    `json:"id"`
+	Elder  string    `json:"elder"`
+	Opened time.Time `json:"opened"`
 }
 
 func newServer(ctx context.Context, newBrain func() companion.Brain, log *slog.Logger) *server {
@@ -40,6 +53,8 @@ func (s *server) routes() http.Handler {
 	mux := http.NewServeMux()
 	static, _ := fs.Sub(webFS, "web")
 	mux.Handle("GET /", http.FileServerFS(static))
+	mux.HandleFunc("GET /api/health", s.health)
+	mux.HandleFunc("GET /api/rooms", s.listRooms)
 	mux.HandleFunc("POST /api/rooms", s.createRoom)
 	mux.HandleFunc("POST /api/rooms/{room}/join", s.joinRoom)
 	mux.HandleFunc("POST /api/rooms/{room}/messages", s.postMessage)
@@ -83,7 +98,26 @@ func (s *server) createRoom(w http.ResponseWriter, r *http.Request) {
 		httpError(w, err)
 		return
 	}
+	s.mu.Lock()
+	s.rooms = append(s.rooms, roomInfo{ID: roomID, Elder: me.Name, Opened: time.Now()})
+	s.mu.Unlock()
 	writeJSON(w, http.StatusOK, joinResponse{RoomID: roomID, Me: me})
+}
+
+// health는 태블릿 보호자 화면이 "인터넷이 연결됐어요"를 확인할 때 부릅니다.
+func (s *server) health(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// listRooms는 열린 방을 최근 것부터 돌려줍니다. 조무사가 브라우저에서 어르신 방을 고를 때 씁니다.
+func (s *server) listRooms(w http.ResponseWriter, r *http.Request) {
+	s.mu.Lock()
+	out := make([]roomInfo, 0, len(s.rooms))
+	for i := len(s.rooms) - 1; i >= 0; i-- {
+		out = append(out, s.rooms[i])
+	}
+	s.mu.Unlock()
+	writeJSON(w, http.StatusOK, out)
 }
 
 // joinRoom은 이미 있는 방에 사람 한 명을 더 넣습니다 (예: 조무사, 보호자).

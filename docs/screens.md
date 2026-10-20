@@ -12,10 +12,10 @@
 
 | 화면 | 보여 줄 것 | 지금 코드 | 피그마 |
 | --- | --- | --- | --- |
-| 기다림 | 흐린 마이크 원, "말을 걸어 주세요", 작은 시계 | 없음 | [기다림](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=11-37) |
-| 듣는 중 | 초록 마이크 원과 물결, "듣고 있어요" | 없음 | [듣는 중](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=11-47) |
-| 말동무가 말하는 중 | 주황 원과 소리 막대, "말동무가 대답해요". 말동무 말은 글로 띄우지 않고 소리로만 | `v2/cmd/server/web` 대화방 (임시, 말풍선이라 바꿀 것) | [말하는 중](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=11-59) · [이전 말풍선 초안](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=2-33)(안 씀) |
-| 보호자 켜 두기 | 보호자용. 충전·인터넷·마이크 확인, 어르신 이름, 말동무 시간, "켜 두고 나가기". 시계를 3초 누르면 이 화면으로 돌아옴 | 없음 | [켜 두기 준비](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=11-71) |
+| 기다림 | 흐린 마이크 원, "말을 걸어 주세요", 작은 시계 | `v2/apps/elder_tablet` (`elder_screen.dart`) | [기다림](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=11-37) |
+| 듣는 중 | 초록 마이크 원과 물결, "듣고 있어요" | `v2/apps/elder_tablet` (`elder_screen.dart`) | [듣는 중](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=11-47) |
+| 말동무가 말하는 중 | 주황 원과 소리 막대, "말동무가 대답해요". 말동무 말은 글로 띄우지 않고 소리로만 | `v2/apps/elder_tablet` (`elder_screen.dart`). 브라우저 대화방은 조무사 쪽 임시 화면으로 남김 | [말하는 중](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=11-59) · [이전 말풍선 초안](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=2-33)(안 씀) |
+| 보호자 켜 두기 | 보호자용. 충전·인터넷·마이크 확인, 어르신 이름, 말동무 시간, "켜 두고 나가기". 시계를 3초 누르면 이 화면으로 돌아옴 | `v2/apps/elder_tablet` (`guardian_screen.dart`). 말동무 시간은 아직 "켜 둔 동안" | [켜 두기 준비](https://www.figma.com/design/eOm90ve0gRyfLPEJHsByvt?node-id=11-71) |
 | 도착 임박 | "선생님이 2분 뒤 도착해요" 같은 큰 안내 | 없음 | |
 | 위급 뒤 | 안심 문장과 "곧 도와드릴 분께 알렸어요" | 안전 지킴이 메시지 (임시) | |
 

@@ -1,0 +1,24 @@
+name: elder_tablet
+description: "실버케어 어르신 태블릿: 보호자 켜 두기 화면과 움직이는 마이크 화면"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.13.5
+
+dependencies:
+  battery_plus: ^7.1.2
+  flutter:
+    sdk: flutter
+  flutter_tts: ^4.2.5
+  http: ^1.6.0
+  speech_to_text: ^7.5.0
+  wakelock_plus: ^1.8.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
