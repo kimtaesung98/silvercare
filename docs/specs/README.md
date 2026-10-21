@@ -9,11 +9,11 @@
  0층  방향           ../DIRECTION.md                왜 만드나, 원칙          (주인이 정함)
  1층  요구사항       requirements.md               누가 무엇을 원하나        UR-… 사용자 / DR-… 개발자
  2층  중위 명세      mid/<이름>.md                  부품 묶음 하나의 약속     예: mid/voice.md
- 3층  하위 명세      low/<묶음>/<이름>.md           부품 하나를 만들 만큼     예: low/voice/recorder.md
+ 3층  하위 명세      low/<묶음>/<이름>.md           부품 하나를 만들 만큼     예: low/voice/listener.md
 ```
 
 - **위층이 아래층을 낳습니다.** 1층의 요구사항 한 줄은 하나 이상의 2층 명세에 배정되고, 2층의 요구사항은 3층 명세로 나뉩니다. 위층에 없는 것을 아래층에서 새로 만들지 않습니다. 필요하면 위층부터 고칩니다.
-- **번호가 길을 남깁니다.** 아래층 요구사항은 자기를 낳은 위층 번호를 `근거` 칸에 적습니다. 그래서 `UR-E-03 → VOICE-04 → REC-07`처럼 어르신의 바람에서 녹음기 한 줄까지 따라갈 수 있습니다.
+- **번호가 길을 남깁니다.** 아래층 요구사항은 자기를 낳은 위층 번호를 `근거` 칸에 적습니다. 그래서 `UR-E-03 → VOICE-04 → LIS-07`처럼 어르신의 바람에서 듣기 한 줄까지 따라갈 수 있습니다.
 - 2층은 DIRECTION.md 4절의 네 층(바탕 · 참가자 · 모듈 · 서비스)과 앱, 공통 기반으로 나눕니다. 목록과 진행 상태는 아래 4절에 있습니다.
 
 ## 2. 쓰는 규칙 (모든 층 공통)
@@ -46,7 +46,7 @@
 | `mid/chat-core.md` 대화 바탕 | 바탕 | `low/chat/room.md` 방과 참가자, `low/chat/message.md` 메시지와 표시, `low/chat/delivery.md` 실시간 전달, `low/chat/module-slot.md` 모듈 자리 | 빈칸 |
 | `mid/companion.md` 말동무 AI | 참가자 | `low/companion/turn.md` 한 턴 만들기(0번 문장 포함), `low/companion/brain.md` 생각하는 부분(Claude와 대체 동작), `low/companion/limits.md` 시간·토큰 한도 | 빈칸 |
 | `mid/safety.md` 위급 필터 | 모듈 | `low/safety/rules.md` 규칙 필터, `low/safety/guard.md` 안전 지킴이와 안심 문장, `low/safety/escalation.md` 사람에게 알리기 | 빈칸 |
-| `mid/voice.md` 음성 | 모듈 | `low/voice/recorder.md` 녹음기, `low/voice/segmenter.md` 말 구간 자르기, `low/voice/stt.md` 말을 글로, `low/voice/tts.md` 글을 말로, `low/voice/playback.md` 재생 순서 | 빈칸 |
+| `mid/voice.md` 음성 | 모듈 | `low/voice/listener.md` 듣기 (초안), `low/voice/segmenter.md` 말 구간 자르기, `low/voice/stt.md` 말을 글로, `low/voice/tts.md` 글을 말로, `low/voice/playback.md` 재생 순서 | 초안 |
 | `mid/summary.md` 요약 | 모듈 | `low/summary/briefing.md` 조무사 브리핑, `low/summary/daily-news.md` 하루 소식 | 빈칸 |
 | `mid/pickup.md` 픽업 대기 | 서비스 | `low/pickup/trip.md` 출발과 위치, `low/pickup/eta.md` 남은 시간, `low/pickup/room-rules.md` 방 열고 닫기 | 빈칸 |
 | `mid/elder-tablet.md` 어르신 태블릿 앱 | 앱 | `low/elder-tablet/screens.md` 화면과 상태, `low/elder-tablet/kiosk.md` 화면 고정과 계속 켜 두기 | 빈칸 |
@@ -56,7 +56,7 @@
 
 로그인, 내 정보, 설정 같은 기본기는 여기서 다시 쓰지 않고 [../mvp/](../mvp/README.md)의 공통 MVP 번호(`MVP-C-…`, `MVP-UI-…`)로 가리킵니다. 실버케어가 무엇을 들여왔는지는 [../mvp/silvercare/mvp.md](../mvp/silvercare/mvp.md)에 있습니다.
 
-처음 만들 순서 (추천): `requirements.md` 확정 → `mid/voice.md` → `low/voice/recorder.md`(첫 쌍둥이 시험) → `mid/chat-core.md` → `mid/safety.md` → 나머지.
+처음 만들 순서 (추천): `requirements.md` 확정 → `mid/voice.md` → `low/voice/listener.md`(첫 쌍둥이 시험) → `mid/chat-core.md` → `mid/safety.md` → 나머지.
 녹음이 첫 대상인 이유: 주인이 처음 든 예이고, 이전 버전에서 가장 오래 막힌 곳(에뮬레이터 마이크)이라 명세가 빈칸을 가장 많이 드러냅니다.
 
 ## 5. 에이전트에게 줄 지시문
@@ -70,7 +70,7 @@ silvercare 저장소의 명세 작업입니다. 코드는 쓰지 않습니다.
 docs/specs/glossary.md, 그리고 이 명세의 위층 명세 [mid/voice.md]
 형식 참고(내용은 그대로 옮기지 않음): notchiwon-bridge/docs/handbook/specs/, notchiwon-bridge/docs/architecture.md 결정 표
 
-할 일: [low/voice/recorder.md]를 [templates/low.md] 틀로 씁니다.
+할 일: [low/voice/listener.md]를 [templates/low.md] 틀로 씁니다.
 배정된 위층 요구사항: [VOICE-01 ~ VOICE-06] (requirements.md 4절 추적표)
 
 README.md 2절 규칙 1~9를 지킵니다. 특히
@@ -86,7 +86,7 @@ README.md 2절 규칙 1~9를 지킵니다. 특히
 쌍둥이 시험을 맡길 때:
 
 ```
-docs/specs/[low/voice/recorder.md] 만 읽고, 실험 브랜치 [spec-twin/recorder-a]에 그대로 만듭니다.
+docs/specs/[low/voice/listener.md] 만 읽고, 실험 브랜치 [spec-twin/listener-a]에 그대로 만듭니다.
 다른 실험 브랜치와 이전 버전 코드(notchiwon-bridge/)는 보지 않습니다.
 명세에 없어서 스스로 정해야 했던 것을 모두 목록으로 남깁니다. 그 목록이 이 시험의 주된 결과입니다.
 수락 기준을 모두 테스트로 만들어 돌리고 결과를 남깁니다. PR은 올리지 않습니다.

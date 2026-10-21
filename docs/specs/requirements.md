@@ -163,14 +163,14 @@
 
 | 1층 | 주로 맡는 2층 | 함께 걸리는 2층 | 2층 번호 |
 | --- | --- | --- | --- |
-| UR-E-01 | mid/voice | mid/elder-tablet, mid/chat-core | |
+| UR-E-01 | mid/voice | mid/elder-tablet, mid/chat-core | VOICE-01, 02 |
 | UR-E-02 | mid/companion | mid/voice | |
 | UR-E-03 | mid/elder-tablet | | |
 | UR-E-04 | mid/safety | mid/companion, mid/caregiver-app | |
 | UR-E-05 | mid/pickup | mid/elder-tablet | |
-| UR-E-06 | mid/voice | mid/elder-tablet | |
+| UR-E-06 | mid/voice | mid/elder-tablet | VOICE-02, 03, 06 |
 | UR-E-07 | mid/companion | mid/elder-tablet | |
-| UR-E-08 | mid/voice | mid/companion | |
+| UR-E-08 | mid/voice | mid/companion | VOICE-10 |
 | UR-C-01 | mid/caregiver-app | mid/pickup | |
 | UR-C-02 | mid/safety | mid/caregiver-app | |
 | UR-C-03 | mid/summary | mid/caregiver-app | |
@@ -187,15 +187,15 @@
 | DR-ARCH-04, 06 | mid/platform | | |
 | DR-ARCH-05 | mid/elder-tablet | mid/voice, mid/caregiver-app | |
 | DR-ARCH-07 | mid/elder-tablet | | |
-| DR-PRIV-01 | mid/voice | mid/elder-tablet | |
+| DR-PRIV-01 | mid/voice | mid/elder-tablet | VOICE-01, 08 |
 | DR-PRIV-02~03 | mid/platform | | |
 | DR-FALL-01 | mid/companion | | |
-| DR-FALL-02~03 | mid/voice | mid/elder-tablet | |
+| DR-FALL-02~03 | mid/voice | mid/elder-tablet | VOICE-05, 06 |
 | DR-FALL-04 | mid/platform | 세 앱 | |
 | DR-FALL-05 | mid/pickup | | |
 | DR-QA-*, DR-OPS-*, DR-PROC-* | mid/platform (검사·실행) | 모든 2층 | |
 
-녹음기(`low/voice/recorder.md`)에 내려갈 1층 요구사항: UR-E-01, UR-E-06, UR-E-08, DR-PRIV-01, DR-FALL-03, DR-ARCH-05, DR-QA-03.
+듣기(`low/voice/listener.md`)에 내려갈 1층 요구사항: UR-E-01, UR-E-06, UR-E-08, DR-PRIV-01, DR-FALL-03, DR-ARCH-05, DR-QA-03.
 
 ## 5. 가정
 
