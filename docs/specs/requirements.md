@@ -195,7 +195,7 @@
 | DR-FALL-05 | mid/pickup | | |
 | DR-QA-*, DR-OPS-*, DR-PROC-* | mid/platform (검사·실행) | 모든 2층 | |
 
-녹음기(`low/voice/recorder.md`)에 내려갈 1층 요구사항: UR-E-01, UR-E-06, UR-E-08, DR-PRIV-01, DR-FALL-03, DR-ARCH-05, DR-QA-03.
+듣기(`low/voice/listener.md`)에 내려갈 1층 요구사항: UR-E-01, UR-E-06, UR-E-08, DR-PRIV-01, DR-FALL-03, DR-ARCH-05, DR-QA-03.
 
 ## 5. 가정
 
