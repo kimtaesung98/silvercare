@@ -35,7 +35,7 @@
 1. 틀의 모든 절이 채워졌거나 "해당 없음"이다.
 2. 모든 요구사항에 근거와 수락 기준이 있다.
 3. 위층 요구사항 중 이 명세에 배정된 것이 모두 아래로 이어졌다 ([requirements.md](./requirements.md) 4절 추적표).
-4. **쌍둥이 시험**을 통과했다: 서로 모르는 에이전트 둘이 이 명세만 보고 실험 브랜치에 따로 만든 뒤, 수락 기준을 양쪽에 돌려 결과가 같다. 결과가 갈린 곳은 명세의 빈칸으로 보고 메운 뒤 다시 시험합니다. 실험 코드는 머지하지 않습니다.
+4. **쌍둥이 시험**을 통과했다: 서로 모르는 에이전트 둘이 이 명세만 보고 실험 브랜치에 따로 만든 뒤, 수락 기준을 양쪽에 돌려 결과가 같다. 결과가 갈린 곳은 명세의 빈칸으로 보고 메운 뒤 다시 시험합니다. 실험 코드는 머지하지 않습니다. 시험마다 기록을 `twin-tests/<명세 이름>-<회차>.md`에 남깁니다 (예: [twin-tests/listener-1.md](./twin-tests/listener-1.md)).
 
 상태: `빈칸`(목록에만 있음) → `초안` → `검토`(주인 확인 중) → `확정`.
 
@@ -46,7 +46,7 @@
 | `mid/chat-core.md` 대화 바탕 | 바탕 | `low/chat/room.md` 방과 참가자, `low/chat/message.md` 메시지와 표시, `low/chat/delivery.md` 실시간 전달, `low/chat/module-slot.md` 모듈 자리 | 빈칸 |
 | `mid/companion.md` 말동무 AI | 참가자 | `low/companion/turn.md` 한 턴 만들기(0번 문장 포함), `low/companion/brain.md` 생각하는 부분(Claude와 대체 동작), `low/companion/limits.md` 시간·토큰 한도 | 빈칸 |
 | `mid/safety.md` 위급 필터 | 모듈 | `low/safety/rules.md` 규칙 필터, `low/safety/guard.md` 안전 지킴이와 안심 문장, `low/safety/escalation.md` 사람에게 알리기 | 빈칸 |
-| `mid/voice.md` 음성 | 모듈 | `low/voice/listener.md` 듣기 (초안), `low/voice/segmenter.md` 말 구간 자르기, `low/voice/stt.md` 말을 글로, `low/voice/tts.md` 글을 말로, `low/voice/playback.md` 재생 순서 | 초안 |
+| `mid/voice.md` 음성 | 모듈 | `low/voice/listener.md` 듣기 (초안, 쌍둥이 시험 1회 뒤 보강), `low/voice/segmenter.md` 말 구간 자르기, `low/voice/stt.md` 말을 글로, `low/voice/tts.md` 글을 말로, `low/voice/playback.md` 재생 순서 | 초안 |
 | `mid/summary.md` 요약 | 모듈 | `low/summary/briefing.md` 조무사 브리핑, `low/summary/daily-news.md` 하루 소식 | 빈칸 |
 | `mid/pickup.md` 픽업 대기 | 서비스 | `low/pickup/trip.md` 출발과 위치, `low/pickup/eta.md` 남은 시간, `low/pickup/room-rules.md` 방 열고 닫기 | 빈칸 |
 | `mid/elder-tablet.md` 어르신 태블릿 앱 | 앱 | `low/elder-tablet/screens.md` 화면과 상태, `low/elder-tablet/kiosk.md` 화면 고정과 계속 켜 두기 | 빈칸 |
